@@ -1,5 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  AnalysisProfile,
+  DEFAULT_ANALYSIS_PROFILE,
+} from '../../analysis/types/analysis-profile';
+import {
   Recommendation,
   type HoldingWindow,
 } from '../../analysis/types/analysis-result';
@@ -11,6 +15,12 @@ export class ScannerResult {
 
   @ApiProperty({ example: 'NVIDIA Corp' })
   companyName: string;
+
+  @ApiProperty({
+    enum: AnalysisProfile,
+    example: DEFAULT_ANALYSIS_PROFILE,
+  })
+  profile: AnalysisProfile;
 
   @ApiProperty({ enum: Recommendation, example: Recommendation.BUY })
   recommendation: Recommendation;
