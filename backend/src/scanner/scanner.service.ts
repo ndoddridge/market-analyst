@@ -23,9 +23,11 @@ export class ScannerService {
     );
 
     const results: ScannerResult[] = [];
+    const failures: unknown[] = [];
 
     for (const outcome of settled) {
-      if (outcome.status !== 'fulfilled') {
+      if (outcome.status === 'rejected') {
+        failures.push(outcome.reason);
         continue;
       }
 
@@ -39,6 +41,16 @@ export class ScannerService {
         suggestedHoldingWindow: summary.suggestedHoldingWindow,
         recommendedAction: summary.strategy.recommendedAction,
       });
+    }
+
+    // Partial watchlist failures are skipped; total failure should not look like
+    // an empty successful scan.
+    if (results.length === 0 && failures.length > 0) {
+      const reason = failures[0];
+      if (reason instanceof Error) {
+        throw reason;
+      }
+      throw new Error(String(reason));
     }
 
     return results.sort((a, b) => b.score - a.score);
