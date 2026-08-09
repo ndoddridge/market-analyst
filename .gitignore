@@ -6,6 +6,9 @@ node_modules/
 .env.*
 !.env.example
 
+# Local mobile tunnel helper output
+backend/.mobile-url
+
 # Build output
 dist/
 build/
