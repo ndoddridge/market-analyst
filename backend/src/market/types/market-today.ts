@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   AnalysisProfile,
   DEFAULT_ANALYSIS_PROFILE,
@@ -11,6 +11,11 @@ export enum MarketDirection {
   MIXED = 'MIXED',
 }
 
+export enum CatalystType {
+  NEWS = 'NEWS',
+  EVENT = 'EVENT',
+}
+
 export class MarketTodayPick {
   @ApiProperty({ example: 'NVDA' })
   ticker: string;
@@ -20,6 +25,28 @@ export class MarketTodayPick {
 
   @ApiProperty({ example: 89 })
   score: number;
+}
+
+export class MarketTodayCatalyst {
+  @ApiProperty({ enum: CatalystType, example: CatalystType.NEWS })
+  type: CatalystType;
+
+  @ApiProperty({
+    example: 'Apple CEO Tim Cook Just Passed His Successor a Mess',
+  })
+  headline: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'AAPL',
+  })
+  ticker: string | null;
+
+  @ApiProperty({ example: '2026-08-09T22:20:00.000Z' })
+  occurredAt: string;
+
+  @ApiProperty({ example: 'Yahoo Finance' })
+  source: string;
 }
 
 export class MarketTodayResult {
@@ -37,6 +64,9 @@ export class MarketTodayResult {
 
   @ApiProperty({ type: MarketTodayPick })
   topRisk: MarketTodayPick;
+
+  @ApiProperty({ type: MarketTodayCatalyst })
+  catalyst: MarketTodayCatalyst;
 
   @ApiProperty({
     example:

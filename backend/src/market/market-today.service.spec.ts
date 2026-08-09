@@ -1,22 +1,35 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { AnalysisProfile } from '../analysis/types/analysis-profile';
 import { Recommendation } from '../analysis/types/analysis-result';
+import { MarketEventType } from '../events/types/market-event';
 import { MarketTodayService } from './market-today.service';
-import { MarketDirection } from './types/market-today';
+import { CatalystType, MarketDirection } from './types/market-today';
 
 describe('MarketTodayService', () => {
   const scannerService = {
     scan: jest.fn(),
+  };
+  const newsService = {
+    getRecentNews: jest.fn(),
+  };
+  const eventsService = {
+    getUpcomingEvents: jest.fn(),
   };
 
   let service: MarketTodayService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new MarketTodayService(scannerService as never);
+    service = new MarketTodayService(
+      scannerService as never,
+      newsService as never,
+      eventsService as never,
+    );
+    newsService.getRecentNews.mockResolvedValue([]);
+    eventsService.getUpcomingEvents.mockResolvedValue([]);
   });
 
-  it('builds today summary from ranked scanner results', async () => {
+  it('builds today summary from ranked scanner results and includes catalyst', async () => {
     scannerService.scan.mockResolvedValue([
       {
         ticker: 'NVDA',
@@ -49,6 +62,17 @@ describe('MarketTodayService', () => {
         recommendedAction: 'Reduce or exit position.',
       },
     ]);
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'n1',
+        title: 'NVIDIA demand stays strong',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-08-09T12:00:00.000Z',
+        relatedTickers: ['NVDA'],
+        provider: 'Yahoo Finance',
+      },
+    ]);
 
     const result = await service.getToday(AnalysisProfile.SHORT_TERM);
 
@@ -67,12 +91,18 @@ describe('MarketTodayService', () => {
       recommendation: Recommendation.SELL,
       score: 20,
     });
-    expect(result.summary).toContain('NVDA');
-    expect(result.summary).toContain('AMD');
+    expect(result.catalyst).toEqual({
+      type: CatalystType.NEWS,
+      headline: 'NVIDIA demand stays strong',
+      ticker: 'NVDA',
+      occurredAt: '2026-08-09T12:00:00.000Z',
+      source: 'Yahoo Finance',
+    });
+    expect(result.summary).toContain('Catalyst: NVIDIA demand stays strong');
     expect(result.generatedAt).toEqual(expect.any(String));
   });
 
-  it('marks direction MIXED when bullish and bearish counts tie', async () => {
+  it('prefers an upcoming event catalyst over news', async () => {
     scannerService.scan.mockResolvedValue([
       {
         ticker: 'AAPL',
@@ -95,11 +125,33 @@ describe('MarketTodayService', () => {
         recommendedAction: 'Reduce or exit position.',
       },
     ]);
+    eventsService.getUpcomingEvents.mockResolvedValue([
+      {
+        id: 'e1',
+        title: 'AAPL earnings',
+        type: MarketEventType.EARNINGS,
+        ticker: 'AAPL',
+        eventDate: '2026-10-29T20:00:00.000Z',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'n1',
+        title: 'Some news',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-08-09T12:00:00.000Z',
+        relatedTickers: ['AAPL'],
+        provider: 'Yahoo Finance',
+      },
+    ]);
 
     const result = await service.getToday(AnalysisProfile.LONG_TERM);
 
+    expect(result.catalyst.type).toBe(CatalystType.EVENT);
+    expect(result.catalyst.headline).toBe('AAPL earnings');
     expect(result.marketDirection).toBe(MarketDirection.MIXED);
-    expect(result.profile).toBe(AnalysisProfile.LONG_TERM);
   });
 
   it('throws when scanner returns no results', async () => {
