@@ -143,4 +143,12 @@ export class MarketTodayResult {
 
   @ApiProperty({ example: '2026-08-09T23:50:00.000Z' })
   generatedAt: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ledger id for the recorded SHORT_TERM prediction snapshot. Null for LONG_TERM or when not recorded.',
+    example: 'pred_01HZXEXAMPLE',
+  })
+  predictionId: string | null;
 }

@@ -1,6 +1,9 @@
 import {
+  Inject,
   Injectable,
+  Optional,
   ServiceUnavailableException,
+  forwardRef,
 } from '@nestjs/common';
 import {
   AnalysisProfile,
@@ -11,6 +14,7 @@ import { EventsService } from '../events/events.service';
 import type { MarketEvent } from '../events/types/market-event';
 import { NewsService } from '../news/news.service';
 import type { NewsItem } from '../news/types/news-item';
+import { PredictionService } from '../prediction/prediction.service';
 import { ScannerService } from '../scanner/scanner.service';
 import type { ScannerResult } from '../scanner/types/scanner-result';
 import {
@@ -36,6 +40,9 @@ export class MarketTodayService {
     private readonly scannerService: ScannerService,
     private readonly newsService: NewsService,
     private readonly eventsService: EventsService,
+    @Optional()
+    @Inject(forwardRef(() => PredictionService))
+    private readonly predictionService?: PredictionService,
   ) {}
 
   /**
@@ -83,7 +90,7 @@ export class MarketTodayService {
       decision.catalyst,
     );
 
-    return {
+    const result: MarketTodayResult = {
       profile: AnalysisProfile.SHORT_TERM,
       marketDirection,
       topOpportunity: decision.topOpportunity,
@@ -93,7 +100,24 @@ export class MarketTodayService {
       reason: decision.reason,
       summary,
       generatedAt: toMarketIsoString(now),
+      predictionId: null,
     };
+
+    // Ledger write only — does not alter ranking/scoring.
+    if (this.predictionService) {
+      const winner = results.find(
+        (item) => item.ticker === decision.topOpportunity.ticker,
+      );
+      const recorded = await this.predictionService.recordFromToday(result, {
+        evaluationWindow: winner?.suggestedHoldingWindow ?? {
+          minDays: 1,
+          maxDays: 5,
+        },
+      });
+      result.predictionId = recorded?.id ?? null;
+    }
+
+    return result;
   }
 
   /**
@@ -131,6 +155,7 @@ export class MarketTodayService {
       reason,
       summary,
       generatedAt: toMarketIsoString(now),
+      predictionId: null,
     };
   }
 

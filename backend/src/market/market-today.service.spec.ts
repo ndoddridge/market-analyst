@@ -351,6 +351,7 @@ describe('MarketTodayService', () => {
     expect(result.catalyst?.date).toBe('2026-10-29T20:00:00.000Z');
     expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
     expect(result.decision).toBeNull();
+    expect(result.predictionId).toBeNull();
     expect(result.topOpportunity).toEqual({
       ticker: 'AAPL',
       recommendation: TodayAction.BUY,
