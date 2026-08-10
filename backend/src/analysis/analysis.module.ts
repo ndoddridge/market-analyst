@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CompanyModule } from '../company/company.module';
 import { HistoryModule } from '../history/history.module';
 import { MarketModule } from '../market/market.module';
@@ -9,7 +9,7 @@ import { StrategyEngineService } from './strategy-engine.service';
 import { TrendAnalysisService } from './trend-analysis.service';
 
 @Module({
-  imports: [MarketModule, CompanyModule, HistoryModule],
+  imports: [forwardRef(() => MarketModule), CompanyModule, HistoryModule],
   controllers: [AnalysisController],
   providers: [
     AnalysisService,
