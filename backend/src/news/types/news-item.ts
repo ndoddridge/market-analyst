@@ -5,5 +5,7 @@ export type NewsItem = {
   url: string | null;
   publishedAt: string;
   relatedTickers: string[];
+  /** Symbol used to fetch this item (helps relevance ranking). */
+  querySymbol: string;
   provider: string;
 };
