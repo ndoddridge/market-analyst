@@ -76,6 +76,7 @@ describe('MarketTodayService', () => {
         url: null,
         publishedAt: '2026-08-09T10:00:00.000Z',
         relatedTickers: ['NVDA'],
+        querySymbol: 'NVDA',
         provider: 'Yahoo Finance',
       },
     ]);
@@ -153,11 +154,12 @@ describe('MarketTodayService', () => {
     newsService.getRecentNews.mockResolvedValue([
       {
         id: 'n1',
-        title: 'Some news',
+        title: 'Apple suppliers prepare for next iPhone cycle',
         source: 'Wire',
         url: null,
         publishedAt: '2026-08-09T10:00:00.000Z',
         relatedTickers: ['AAPL'],
+        querySymbol: 'AAPL',
         provider: 'Yahoo Finance',
       },
     ]);
@@ -197,11 +199,12 @@ describe('MarketTodayService', () => {
     newsService.getRecentNews.mockResolvedValue([
       {
         id: 'old',
-        title: 'Old headline',
+        title: 'S&P 500 closes lower ahead of Fed decision',
         source: 'Wire',
         url: null,
         publishedAt: '2026-07-01T00:00:00.000Z',
         relatedTickers: ['SPY'],
+        querySymbol: 'SPY',
         provider: 'Yahoo Finance',
       },
     ]);
@@ -213,6 +216,52 @@ describe('MarketTodayService', () => {
       'No confirmed news or event catalyst is available',
     );
     expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
+  });
+
+  it('rejects an unrelated company story as SPY catalyst and returns null', async () => {
+    scannerService.scan.mockResolvedValue([
+      {
+        ticker: 'SPY',
+        companyName: 'SPDR',
+        profile: AnalysisProfile.SHORT_TERM,
+        recommendation: Recommendation.BUY,
+        score: 83,
+        confidence: 0.6,
+        suggestedHoldingWindow: { minDays: 5, maxDays: 15 },
+        recommendedAction: 'Open a position.',
+      },
+      {
+        ticker: 'TSM',
+        companyName: 'TSMC',
+        profile: AnalysisProfile.SHORT_TERM,
+        recommendation: Recommendation.SELL,
+        score: 20,
+        confidence: 0.6,
+        suggestedHoldingWindow: { minDays: 0, maxDays: 0 },
+        recommendedAction: 'Reduce or exit position.',
+      },
+    ]);
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'bad',
+        title:
+          'Chinese wind turbine maker urges Burnham to overturn security ban',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-08-09T14:30:00.000Z',
+        relatedTickers: ['SPY', 'NVDA'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.topOpportunity.ticker).toBe('SPY');
+    expect(result.catalyst).toBeNull();
+    expect(result.summary).toContain(
+      'No confirmed news or event catalyst is available',
+    );
   });
 
   it('throws when scanner returns no results', async () => {

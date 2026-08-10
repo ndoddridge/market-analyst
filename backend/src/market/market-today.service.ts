@@ -13,6 +13,7 @@ import { NewsService } from '../news/news.service';
 import type { NewsItem } from '../news/types/news-item';
 import { ScannerService } from '../scanner/scanner.service';
 import type { ScannerResult } from '../scanner/types/scanner-result';
+import { isNewsRelevantToTicker } from './catalyst-relevance';
 import {
   CatalystType,
   MarketDirection,
@@ -191,14 +192,13 @@ export class MarketTodayService {
       return daysAhead >= 30 && daysAhead <= 365;
     });
 
-    if (filtered.length === 0) {
+    // Only opportunity-ticker events — never an unrelated name (e.g. risk ETF filler).
+    const preferred =
+      filtered.find((event) => event.ticker === opportunityTicker) ?? null;
+
+    if (!preferred) {
       return null;
     }
-
-    const preferred =
-      filtered.find((event) => event.ticker === opportunityTicker) ??
-      filtered.find((event) => event.ticker === riskTicker) ??
-      filtered[0];
 
     return {
       type: CatalystType.EVENT,
@@ -213,12 +213,12 @@ export class MarketTodayService {
     profile: AnalysisProfile,
     news: NewsItem[],
     opportunityTicker: string,
-    riskTicker: string,
+    _riskTicker: string,
   ): MarketTodayCatalyst | null {
     const now = Date.now();
     const maxAgeDays = profile === AnalysisProfile.SHORT_TERM ? 3 : 30;
 
-    const filtered = news.filter((item) => {
+    const recent = news.filter((item) => {
       const ts = new Date(item.publishedAt).getTime();
       if (Number.isNaN(ts)) {
         return false;
@@ -226,26 +226,19 @@ export class MarketTodayService {
       return now - ts <= maxAgeDays * DAY_MS;
     });
 
-    if (filtered.length === 0) {
+    // Opportunity-first: ticker-specific or genuinely broad-market for ETFs only.
+    const preferred =
+      recent.find((item) => isNewsRelevantToTicker(item, opportunityTicker)) ??
+      null;
+
+    if (!preferred) {
       return null;
     }
-
-    const preferred =
-      filtered.find((item) =>
-        item.relatedTickers.includes(opportunityTicker),
-      ) ??
-      filtered.find((item) => item.relatedTickers.includes(riskTicker)) ??
-      filtered[0];
 
     return {
       type: CatalystType.NEWS,
       headline: preferred.title,
-      ticker:
-        preferred.relatedTickers.find((ticker) =>
-          [opportunityTicker, riskTicker, 'SPY', 'QQQ'].includes(ticker),
-        ) ??
-        preferred.relatedTickers[0] ??
-        null,
+      ticker: opportunityTicker,
       date: preferred.publishedAt,
       source: preferred.provider,
     };

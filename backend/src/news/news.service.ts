@@ -80,6 +80,7 @@ export class NewsService {
               ? new Date(item.datetime * 1000).toISOString()
               : new Date().toISOString(),
           relatedTickers: [symbol],
+          querySymbol: symbol,
           provider: 'Finnhub',
         }));
       }),
@@ -108,10 +109,10 @@ export class NewsService {
             item.providerPublishTime != null
               ? new Date(item.providerPublishTime).toISOString()
               : new Date().toISOString(),
-          relatedTickers:
-            item.relatedTickers?.map((ticker) => ticker.toUpperCase()) ?? [
-              symbol,
-            ],
+          relatedTickers: (item.relatedTickers ?? []).map((ticker) =>
+            ticker.toUpperCase(),
+          ),
+          querySymbol: symbol,
           provider: 'Yahoo Finance',
         }));
       }),
