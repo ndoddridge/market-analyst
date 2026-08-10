@@ -77,6 +77,14 @@ export class MarketTodayResult {
   catalyst: MarketTodayCatalyst | null;
 
   @ApiProperty({
+    description:
+      'Concise explanation of why the top opportunity ranked first for this profile.',
+    example:
+      'NVDA wins on near-term setup with upcoming catalyst within 1–5 sessions (Earnings) and supportive scanner momentum (score 89).',
+  })
+  reason: string;
+
+  @ApiProperty({
     example:
       'SHORT_TERM setup is BULLISH over the next few trading days: NVDA leads while AMD is the weakest score. Catalyst: NVIDIA demand stays strong (Yahoo Finance).',
   })

@@ -13,6 +13,7 @@
   const riskRecEl = document.getElementById("risk-rec");
   const riskScoreEl = document.getElementById("risk-score");
   const catalystBodyEl = document.getElementById("catalyst-body");
+  const reasonEl = document.getElementById("reason");
   const summaryEl = document.getElementById("summary");
   const generatedEl = document.getElementById("generated");
 
@@ -91,6 +92,7 @@
     riskScoreEl.textContent = `Score ${data.topRisk.score}`;
 
     renderCatalyst(data.catalyst);
+    reasonEl.textContent = data.reason || "";
     summaryEl.textContent = data.summary;
     generatedEl.textContent = `Updated ${formatDate(data.generatedAt)}`;
 

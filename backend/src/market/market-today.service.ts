@@ -18,6 +18,7 @@ import {
   toMarketIsoString,
 } from '../shared/market-clock';
 import { scoreNewsCatalyst } from './catalyst-relevance';
+import { decideShortTermOpportunity } from './short-term-decision';
 import {
   CatalystType,
   MarketDirection,
@@ -51,18 +52,67 @@ export class MarketTodayService {
       );
     }
 
-    const ranked = this.rankForProfile(results, profile);
+    if (profile === AnalysisProfile.SHORT_TERM) {
+      return this.buildShortTermToday(results, now);
+    }
+
+    return this.buildLongTermToday(results, now);
+  }
+
+  /**
+   * SHORT_TERM: rank by scanner signals + relevant catalysts (not raw score alone).
+   */
+  private async buildShortTermToday(
+    results: ScannerResult[],
+    now: Date,
+  ): Promise<MarketTodayResult> {
+    const focusTickers = [...new Set(results.map((result) => result.ticker))];
+    const [events, news] = await Promise.all([
+      this.eventsService.getUpcomingEvents(focusTickers),
+      this.newsService.getRecentNews(focusTickers),
+    ]);
+
+    const decision = decideShortTermOpportunity(results, news, events, now);
+    const marketDirection = this.resolveMarketDirection(results);
+    const summary = this.buildSummary(
+      AnalysisProfile.SHORT_TERM,
+      marketDirection,
+      decision.topOpportunity,
+      decision.topRisk,
+      decision.catalyst,
+    );
+
+    return {
+      profile: AnalysisProfile.SHORT_TERM,
+      marketDirection,
+      topOpportunity: decision.topOpportunity,
+      topRisk: decision.topRisk,
+      catalyst: decision.catalyst,
+      reason: decision.reason,
+      summary,
+      generatedAt: toMarketIsoString(now),
+    };
+  }
+
+  /**
+   * LONG_TERM: unchanged score/window ranking + post-pick catalyst resolution.
+   */
+  private async buildLongTermToday(
+    results: ScannerResult[],
+    now: Date,
+  ): Promise<MarketTodayResult> {
+    const ranked = this.rankForLongTerm(results);
     const topOpportunity = this.toPick(ranked[0]);
     const topRisk = this.toPick(ranked[ranked.length - 1]);
     const marketDirection = this.resolveMarketDirection(ranked);
-    const catalyst = await this.resolveCatalyst(
-      profile,
+    const catalyst = await this.resolveLongTermCatalyst(
       topOpportunity,
       topRisk,
       now,
     );
+    const reason = `${topOpportunity.ticker} leads on LONG_TERM scanner score (${topOpportunity.score}) with a multi-month holding window.`;
     const summary = this.buildSummary(
-      profile,
+      AnalysisProfile.LONG_TERM,
       marketDirection,
       topOpportunity,
       topRisk,
@@ -70,38 +120,27 @@ export class MarketTodayService {
     );
 
     return {
-      profile,
+      profile: AnalysisProfile.LONG_TERM,
       marketDirection,
       topOpportunity,
       topRisk,
       catalyst,
+      reason,
       summary,
       generatedAt: toMarketIsoString(now),
     };
   }
 
-  /**
-   * Profile-aware ranking on top of scanner scores:
-   * SHORT_TERM favors nearer holding windows; LONG_TERM favors multi-month windows.
-   */
-  private rankForProfile(
-    results: ScannerResult[],
-    profile: AnalysisProfile,
-  ): ScannerResult[] {
+  private rankForLongTerm(results: ScannerResult[]): ScannerResult[] {
     return [...results].sort((a, b) => {
       const scoreDiff = b.score - a.score;
       if (scoreDiff !== 0) {
         return scoreDiff;
       }
 
-      const aDays = a.suggestedHoldingWindow.maxDays;
-      const bDays = b.suggestedHoldingWindow.maxDays;
-
-      if (profile === AnalysisProfile.SHORT_TERM) {
-        return aDays - bDays;
-      }
-
-      return bDays - aDays;
+      return (
+        b.suggestedHoldingWindow.maxDays - a.suggestedHoldingWindow.maxDays
+      );
     });
   }
 
@@ -137,8 +176,7 @@ export class MarketTodayService {
     return MarketDirection.NEUTRAL;
   }
 
-  private async resolveCatalyst(
-    profile: AnalysisProfile,
+  private async resolveLongTermCatalyst(
     topOpportunity: MarketTodayPick,
     topRisk: MarketTodayPick,
     now: Date,
@@ -157,9 +195,8 @@ export class MarketTodayService {
       this.newsService.getRecentNews(focusTickers),
     ]);
 
-    // Preference order: direct ticker event → strong relevant news → null.
     const eventCatalyst = this.pickEventCatalyst(
-      profile,
+      AnalysisProfile.LONG_TERM,
       events,
       topOpportunity.ticker,
       now,
@@ -169,7 +206,7 @@ export class MarketTodayService {
     }
 
     return this.pickNewsCatalyst(
-      profile,
+      AnalysisProfile.LONG_TERM,
       news,
       topOpportunity.ticker,
       now,
