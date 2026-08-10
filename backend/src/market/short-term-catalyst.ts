@@ -47,7 +47,25 @@ const ETF_FUND_PRODUCT_PROMO_TERMS = [
   'inflows',
   'outflows',
   'fund flows',
+  "here's what it signals",
+  'here is what it signals',
+  'what it signals for',
+  'what this means for',
+  'what it means for',
+  'piled into',
 ];
+
+/** Company names that often appear as comparison/context noise in AI/mega-cap headlines. */
+const PEER_COMPANY_NAME_MARKERS: Record<string, string[]> = {
+  NVDA: ['nvidia', 'nvidias'],
+  META: ['meta', 'metas', 'facebook'],
+  AAPL: ['apple', 'apples'],
+  MSFT: ['microsoft', 'microsofts'],
+  AMD: ['advanced micro devices'],
+  TSM: ['taiwan semiconductor', 'tsmc'],
+  AVGO: ['broadcom'],
+  MRVL: ['marvell'],
+};
 
 /** Named mutual-fund / peer-ETF products that often appear in comparison pieces. */
 const FUND_PRODUCT_TICKERS = [
@@ -245,6 +263,18 @@ function hasCompanySubstance(title: string): boolean {
   return COMPANY_SUBSTANCE_TERMS.some((term) => lower.includes(term));
 }
 
+function companyNameIndex(titleLower: string, ticker: string): number {
+  const markers = PEER_COMPANY_NAME_MARKERS[ticker.toUpperCase()] ?? [];
+  let best = -1;
+  for (const marker of markers) {
+    const idx = titleLower.indexOf(marker);
+    if (idx >= 0 && (best < 0 || idx < best)) {
+      best = idx;
+    }
+  }
+  return best;
+}
+
 /**
  * True when the headline is primarily about another equity, with the target
  * only as a secondary comparison (e.g. "Marvell (MRVL) vs. AVGO and NVDA").
@@ -252,12 +282,24 @@ function hasCompanySubstance(title: string): boolean {
 function isSecondaryTickerMention(item: NewsItem, ticker: string): boolean {
   const target = ticker.toUpperCase();
   const title = item.title;
-  if (!headlineMentionsTicker(title, target)) {
+  const lower = title.toLowerCase();
+  const mentionsTargetToken = headlineMentionsTicker(title, target);
+  const targetNameIdx = companyNameIndex(lower, target);
+
+  if (!mentionsTargetToken && targetNameIdx < 0) {
     return false;
   }
 
   const upper = title.toUpperCase();
-  const targetIdx = upper.search(new RegExp(`\\b${target}\\b`));
+  const targetTokenIdx = mentionsTargetToken
+    ? upper.search(new RegExp(`\\b${target}\\b`))
+    : -1;
+  const targetIdx =
+    targetTokenIdx >= 0
+      ? targetTokenIdx
+      : targetNameIdx >= 0
+        ? targetNameIdx
+        : -1;
   if (targetIdx < 0) {
     return false;
   }
@@ -272,9 +314,25 @@ function isSecondaryTickerMention(item: NewsItem, ticker: string): boolean {
     );
 
   for (const other of relatedOthers) {
-    const idx = upper.search(new RegExp(`\\b${other}\\b`));
-    if (idx >= 0 && idx < targetIdx) {
+    const tokenIdx = upper.search(new RegExp(`\\b${other}\\b`));
+    const nameIdx = companyNameIndex(lower, other);
+    const otherIdx =
+      tokenIdx >= 0 ? tokenIdx : nameIdx >= 0 ? nameIdx : -1;
+    if (otherIdx >= 0 && otherIdx < targetIdx) {
       return true;
+    }
+  }
+
+  // Peer company names appearing before the target (even without related tags).
+  for (const [other, markers] of Object.entries(PEER_COMPANY_NAME_MARKERS)) {
+    if (other === target) {
+      continue;
+    }
+    for (const marker of markers) {
+      const idx = lower.indexOf(marker);
+      if (idx >= 0 && idx < targetIdx) {
+        return true;
+      }
     }
   }
 
@@ -284,7 +342,30 @@ function isSecondaryTickerMention(item: NewsItem, ticker: string): boolean {
     return true;
   }
 
+  // "... after Meta's earnings ..." used only as timing for a different story.
+  if (
+    new RegExp(`\\bafter\\s+${target}\\b`, 'i').test(title) === false &&
+    markersAfterPossessive(lower, target)
+  ) {
+    return true;
+  }
+
   return false;
+}
+
+function markersAfterPossessive(titleLower: string, ticker: string): boolean {
+  const markers = PEER_COMPANY_NAME_MARKERS[ticker.toUpperCase()] ?? [
+    ticker.toLowerCase(),
+  ];
+  return markers.some((marker) => {
+    const possessive = `${marker.replace(/s$/, '')}'s`;
+    const idx = titleLower.indexOf(possessive);
+    if (idx < 0) {
+      return false;
+    }
+    // Possessive form appears after another company/fund actor already named.
+    return idx > 12;
+  });
 }
 
 /**

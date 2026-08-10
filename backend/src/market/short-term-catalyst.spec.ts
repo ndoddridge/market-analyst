@@ -101,4 +101,16 @@ describe('short-term catalyst quality', () => {
     expect(isMeaningfulShortTermNewsCatalyst(item, 'NVDA')).toBe(false);
     expect(scoreShortTermNewsCatalyst(item, 'NVDA', now)).toBe(-1);
   });
+
+  it('rejects educational fund-flow stories that only mention the ticker as context', () => {
+    const item = news({
+      title:
+        "Cathie Wood's Ark Piled Into Nvidia and Taiwan Semiconductor After Meta's Earnings Miss. Here's What It Signals for Artificial Intelligence (AI) Stocks.",
+      relatedTickers: ['META', 'NVDA', 'TSM'],
+      querySymbol: 'META',
+    });
+
+    expect(isEtfOrFundProductOrPromoStory(item.title)).toBe(true);
+    expect(isMeaningfulShortTermNewsCatalyst(item, 'META')).toBe(false);
+  });
 });
