@@ -2,6 +2,7 @@ import type { PortfolioPositionInput } from './types/portfolio';
 import { CsvParseResult } from './types/portfolio';
 
 const HEADER = ['ticker', 'shares', 'avgcost', 'currentprice'] as const;
+const CHASE_REQUIRED = ['ticker', 'quantity', 'unitcost', 'price'] as const;
 
 /**
  * Parse a simple portfolio CSV.
@@ -37,8 +38,9 @@ export function parsePortfolioCsv(csvText: string): CsvParseResult {
   const headerOk =
     headerCells.length >= 4 &&
     HEADER.every((name, index) => headerCells[index] === name);
+const chaseHeaderOk = CHASE_REQUIRED.every((name) => headerCells.includes(name));
 
-  if (!headerOk) {
+  if (headerOk === false && chaseHeaderOk === false) {
     return {
       positions: [],
       errors: [
@@ -62,7 +64,7 @@ export function parsePortfolioCsv(csvText: string): CsvParseResult {
       continue;
     }
 
-    const parsed = parsePositionRow(cells, lineNumber);
+    const parsed = chaseHeaderOk ? parsePositionRow([cells[headerCells.indexOf('ticker')], cells[headerCells.indexOf('quantity')], cells[headerCells.indexOf('unitcost')], cells[headerCells.indexOf('price')]], lineNumber) : parsePositionRow(cells, lineNumber);
     if ('error' in parsed) {
       errors.push(parsed.error);
       continue;

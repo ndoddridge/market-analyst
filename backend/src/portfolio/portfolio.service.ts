@@ -20,6 +20,7 @@ import type {
   PortfolioAnalysisResult,
   PortfolioPositionInput,
   PositionAnalysisCard,
+  PortfolioBuyCandidate,
 } from './types/portfolio';
 import { PositionMove } from './types/portfolio';
 
@@ -46,14 +47,34 @@ export class PortfolioService {
     const tickers = positions.map((position) => position.ticker);
     const now = new Date();
 
-    const [scannerResults, news, events] = await Promise.all([
-      this.scannerService.scan({
-        watchlist: tickers,
-        profile: AnalysisProfile.SHORT_TERM,
-      }),
-      this.newsService.getRecentNews(tickers),
-      this.eventsService.getUpcomingEvents(tickers),
-    ]);
+    const buyUniverse = [
+      'AAPL',
+      'MSFT',
+      'NVDA',
+      'AMD',
+      'META',
+      'TSM',
+      'SPY',
+      'QQQ',
+      'AMZN',
+      'GOOGL',
+      'AVGO',
+      'MU',
+    ].filter((ticker) => !tickers.includes(ticker));
+
+    const [scannerResults, buyScannerResults, news, events] =
+      await Promise.all([
+        this.scannerService.scan({
+          watchlist: tickers,
+          profile: AnalysisProfile.SHORT_TERM,
+        }),
+        this.scannerService.scan({
+          watchlist: buyUniverse,
+          profile: AnalysisProfile.SHORT_TERM,
+        }),
+        this.newsService.getRecentNews([...tickers, ...buyUniverse]),
+        this.eventsService.getUpcomingEvents([...tickers, ...buyUniverse]),
+      ]);
 
     const cards: PositionAnalysisCard[] = [];
 
@@ -106,9 +127,34 @@ export class PortfolioService {
       card.marketDirection = direction;
     }
 
+    const buyCandidates = buyScannerResults
+      .map((result) =>
+        evaluateShortTermCandidate(result, news, events, now),
+      )
+      .filter(
+        (candidate) =>
+          candidate.presentationRecommendation === TodayAction.BUY ||
+          candidate.presentationRecommendation === TodayAction.WATCH,
+      )
+      .sort(
+        (a, b) =>
+          b.result.score - a.result.score ||
+          b.catalystScore - a.catalystScore,
+      )
+      .slice(0, 5)
+      .map((candidate): PortfolioBuyCandidate => ({
+        ticker: candidate.result.ticker,
+        currentPrice: 0,
+        signalScore: candidate.result.score,
+        recommendation: candidate.presentationRecommendation,
+        setupQuality: candidate.setupQuality,
+        reason: "SHORT_TERM scanner candidate",
+      }));
+
     return {
       summary: this.buildSummary(cards),
       positions: cards,
+      buyCandidates,
       generatedAt: toMarketIsoString(now),
     };
   }

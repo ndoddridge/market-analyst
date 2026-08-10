@@ -26,6 +26,10 @@ export class PortfolioPositionInput {
 
   @ApiProperty({ example: 313.33 })
   currentPrice: number;
+  estimatedOpenPrice?: number | null;
+  estimatedOpenChangePercent?: number | null;
+  suggestedSellPrice?: number | null;
+  openEstimateAvailable?: boolean;
 }
 
 export class AnalyzePortfolioRequest {
@@ -114,12 +118,35 @@ export class PortfolioSummary {
   recommendedActions: PortfolioActionSummaryItem[];
 }
 
+export class PortfolioBuyCandidate {
+  @ApiProperty()
+  ticker: string;
+
+  @ApiProperty()
+  currentPrice: number;
+
+  @ApiProperty()
+  signalScore: number;
+
+  @ApiProperty({ enum: TodayAction })
+  recommendation: TodayAction;
+
+  @ApiProperty({ enum: SetupQuality })
+  setupQuality: SetupQuality;
+
+  @ApiProperty()
+  reason: string;
+}
+
 export class PortfolioAnalysisResult {
   @ApiProperty({ type: PortfolioSummary })
   summary: PortfolioSummary;
 
   @ApiProperty({ type: [PositionAnalysisCard] })
   positions: PositionAnalysisCard[];
+
+  @ApiProperty({ type: [PortfolioBuyCandidate] })
+  buyCandidates: PortfolioBuyCandidate[];
 
   @ApiProperty()
   generatedAt: string;
