@@ -235,6 +235,35 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.setup-quality {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sea-deep);
+}
+
+.setup-quality[data-quality="STRONG"] {
+  color: var(--sea-deep);
+}
+
+.setup-quality[data-quality="MODERATE"] {
+  color: #6a5a2e;
+}
+
+.setup-quality[data-quality="WEAK"] {
+  color: var(--ink-soft);
+}
+
+.decision-reason {
+  margin: 0.35rem 0 0;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
 .catalyst {
   padding: 0.95rem 1rem;
   border-radius: var(--radius);

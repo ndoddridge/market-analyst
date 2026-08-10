@@ -3,7 +3,6 @@ import {
   AnalysisProfile,
   DEFAULT_ANALYSIS_PROFILE,
 } from '../../analysis/types/analysis-profile';
-import { Recommendation } from '../../analysis/types/analysis-result';
 
 export enum MarketDirection {
   BULLISH = 'BULLISH',
@@ -16,12 +15,30 @@ export enum CatalystType {
   EVENT = 'EVENT',
 }
 
+/**
+ * Presentation actions for /today picks.
+ * WAIT is SHORT_TERM-only when near-term evidence is weak/unclear.
+ */
+export enum TodayAction {
+  BUY = 'BUY',
+  WATCH = 'WATCH',
+  WAIT = 'WAIT',
+  HOLD = 'HOLD',
+  SELL = 'SELL',
+}
+
+export enum SetupQuality {
+  STRONG = 'STRONG',
+  MODERATE = 'MODERATE',
+  WEAK = 'WEAK',
+}
+
 export class MarketTodayPick {
   @ApiProperty({ example: 'NVDA' })
   ticker: string;
 
-  @ApiProperty({ enum: Recommendation, example: Recommendation.BUY })
-  recommendation: Recommendation;
+  @ApiProperty({ enum: TodayAction, example: TodayAction.BUY })
+  recommendation: TodayAction;
 
   @ApiProperty({ example: 89 })
   score: number;
@@ -52,6 +69,32 @@ export class MarketTodayCatalyst {
   source: string;
 }
 
+export class DecisionEvidence {
+  @ApiProperty({
+    description: 'Scanner-derived signal score for the top opportunity.',
+    example: 89,
+  })
+  signalScore: number;
+
+  @ApiProperty({
+    description:
+      '0–100 strength/relevance of the catalyst for a 1–5 day trade; 0 when none.',
+    example: 86,
+  })
+  catalystScore: number;
+
+  @ApiProperty({ enum: SetupQuality, example: SetupQuality.STRONG })
+  setupQuality: SetupQuality;
+
+  @ApiProperty({
+    description:
+      'Concise explanation of why the opportunity ranked where it did.',
+    example:
+      'NVDA ranks first: strong scanner momentum with a high-impact earnings catalyst inside 1–5 sessions.',
+  })
+  reason: string;
+}
+
 export class MarketTodayResult {
   @ApiProperty({
     enum: AnalysisProfile,
@@ -75,6 +118,14 @@ export class MarketTodayResult {
       'Real news/event catalyst when available; null when none can be identified.',
   })
   catalyst: MarketTodayCatalyst | null;
+
+  @ApiPropertyOptional({
+    type: DecisionEvidence,
+    nullable: true,
+    description:
+      'SHORT_TERM structured decision evidence. Null for LONG_TERM.',
+  })
+  decision: DecisionEvidence | null;
 
   @ApiProperty({
     description:

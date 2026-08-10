@@ -4,7 +4,12 @@ import { Recommendation } from '../analysis/types/analysis-result';
 import { MarketEventType } from '../events/types/market-event';
 import { toMarketIsoString } from '../shared/market-clock';
 import { MarketTodayService } from './market-today.service';
-import { CatalystType, MarketDirection } from './types/market-today';
+import {
+  CatalystType,
+  MarketDirection,
+  SetupQuality,
+  TodayAction,
+} from './types/market-today';
 
 describe('MarketTodayService', () => {
   const scannerService = {
@@ -117,12 +122,12 @@ describe('MarketTodayService', () => {
     expect(result.marketDirection).toBe(MarketDirection.BULLISH);
     expect(result.topOpportunity).toEqual({
       ticker: 'NVDA',
-      recommendation: Recommendation.BUY,
+      recommendation: TodayAction.WATCH,
       score: 90,
     });
     expect(result.topRisk).toEqual({
       ticker: 'AMD',
-      recommendation: Recommendation.SELL,
+      recommendation: TodayAction.SELL,
       score: 20,
     });
     expect(result.catalyst).toEqual({
@@ -132,6 +137,13 @@ describe('MarketTodayService', () => {
       date: '2026-08-09T10:00:00.000Z',
       source: 'Yahoo Finance',
     });
+    expect(result.decision).toEqual(
+      expect.objectContaining({
+        signalScore: 90,
+        setupQuality: SetupQuality.MODERATE,
+      }),
+    );
+    expect(result.decision?.catalystScore).toBeGreaterThan(0);
     expect(result.reason).toMatch(/NVDA/);
     expect(result.summary).toContain('next few trading days');
     expect(result.summary).toContain('Catalyst: NVIDIA demand stays strong');
@@ -169,9 +181,10 @@ describe('MarketTodayService', () => {
     const result = await service.getToday(AnalysisProfile.SHORT_TERM);
 
     expect(result.topOpportunity.ticker).toBe('SPY');
-    expect(result.topOpportunity.recommendation).toBe(Recommendation.WATCH);
+    expect(result.topOpportunity.recommendation).toBe(TodayAction.WATCH);
     expect(result.catalyst).toBeNull();
-    expect(result.reason).toMatch(/WATCH\/WAIT/i);
+    expect(result.decision?.catalystScore).toBe(0);
+    expect(result.reason).toMatch(/WATCH/i);
   });
 
   it('rejects a VFIAX-style fund fee/comparison story as an SPY SHORT_TERM catalyst', async () => {
@@ -194,6 +207,7 @@ describe('MarketTodayService', () => {
 
     expect(result.topOpportunity.ticker).toBe('SPY');
     expect(result.catalyst).toBeNull();
+    expect(result.decision?.catalystScore).toBe(0);
     expect(result.summary).toContain(
       'No confirmed news or event catalyst is available',
     );
@@ -336,6 +350,12 @@ describe('MarketTodayService', () => {
     expect(result.catalyst?.headline).toBe('AAPL earnings');
     expect(result.catalyst?.date).toBe('2026-10-29T20:00:00.000Z');
     expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
+    expect(result.decision).toBeNull();
+    expect(result.topOpportunity).toEqual({
+      ticker: 'AAPL',
+      recommendation: TodayAction.BUY,
+      score: 80,
+    });
     expect(result.reason).toContain('LONG_TERM scanner score');
     expect(result.summary).toContain('multi-month opportunities');
   });
@@ -359,8 +379,9 @@ describe('MarketTodayService', () => {
     const result = await service.getToday(AnalysisProfile.SHORT_TERM);
 
     expect(result.topOpportunity.ticker).toBe('SPY');
-    expect(result.topOpportunity.recommendation).toBe(Recommendation.WATCH);
+    expect(result.topOpportunity.recommendation).toBe(TodayAction.WATCH);
     expect(result.catalyst).toBeNull();
+    expect(result.decision?.catalystScore).toBe(0);
     expect(result.summary).toContain(
       'No confirmed news or event catalyst is available',
     );
