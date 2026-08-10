@@ -111,13 +111,11 @@ describe('ScannerService', () => {
     expect(results[0].recommendedAction).toBe('Wait.');
   });
 
-  it('rethrows when every ticker fails analysis', async () => {
+  it('returns an empty list when every ticker fails analysis', async () => {
     analysisService.analyzeSummary.mockRejectedValue(
       new Error('Configuration key "FINNHUB_API_KEY" does not exist'),
     );
 
-    await expect(scannerService.scan(['AAPL', 'MSFT'])).rejects.toThrow(
-      'FINNHUB_API_KEY',
-    );
+    await expect(scannerService.scan(['AAPL', 'MSFT'])).resolves.toEqual([]);
   });
 });

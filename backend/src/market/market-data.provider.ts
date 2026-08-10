@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
+import YahooFinance from 'yahoo-finance2';
 import { ConfigService } from '../config/config.service';
 import type { MarketQuote } from './types/market-quote';
 
@@ -16,11 +17,17 @@ type FinnhubQuoteResponse = {
 @Injectable()
 export class MarketDataProvider {
   private readonly quoteUrl = 'https://finnhub.io/api/v1/quote';
+  private readonly yahooFinance = new YahooFinance({
+    suppressNotices: ['yahooSurvey'],
+  });
 
   constructor(private readonly configService: ConfigService) {}
 
   async getQuote(symbol: string): Promise<MarketQuote> {
-    const token = this.configService.getFinnhubApiKey();
+    const token = this.configService.getOptionalFinnhubApiKey();
+    if (!token) {
+      return this.getQuoteFromYahoo(symbol);
+    }
 
     try {
       const { data } = await axios.get<FinnhubQuoteResponse>(this.quoteUrl, {
@@ -54,6 +61,38 @@ export class MarketDataProvider {
 
       if (axios.isAxiosError(error)) {
         this.throwForAxiosError(error, symbol);
+      }
+
+      throw new BadGatewayException(
+        `Failed to fetch quote for symbol: ${symbol}`,
+      );
+    }
+  }
+
+  private async getQuoteFromYahoo(symbol: string): Promise<MarketQuote> {
+    try {
+      const quote = await this.yahooFinance.quote(symbol);
+      const price = quote.regularMarketPrice;
+
+      if (price == null || price === 0) {
+        throw new NotFoundException(`Quote not found for symbol: ${symbol}`);
+      }
+
+      const timestamp =
+        quote.regularMarketTime != null
+          ? new Date(quote.regularMarketTime).toISOString()
+          : new Date().toISOString();
+
+      return {
+        symbol,
+        price,
+        currency: quote.currency ?? 'USD',
+        timestamp,
+        source: 'Yahoo Finance',
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
       }
 
       throw new BadGatewayException(

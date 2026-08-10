@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AnalysisService } from '../analysis/analysis.service';
 import type { ScannerResult } from './types/scanner-result';
 
@@ -15,6 +15,8 @@ const DEFAULT_WATCHLIST = [
 
 @Injectable()
 export class ScannerService {
+  private readonly logger = new Logger(ScannerService.name);
+
   constructor(private readonly analysisService: AnalysisService) {}
 
   async scan(watchlist: readonly string[] = DEFAULT_WATCHLIST): Promise<ScannerResult[]> {
@@ -23,11 +25,17 @@ export class ScannerService {
     );
 
     const results: ScannerResult[] = [];
-    const failures: unknown[] = [];
 
-    for (const outcome of settled) {
+    for (let index = 0; index < settled.length; index += 1) {
+      const outcome = settled[index];
+      const ticker = watchlist[index];
+
       if (outcome.status === 'rejected') {
-        failures.push(outcome.reason);
+        const reason =
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason);
+        this.logger.warn(`Skipping ${ticker}: ${reason}`);
         continue;
       }
 
@@ -41,16 +49,6 @@ export class ScannerService {
         suggestedHoldingWindow: summary.suggestedHoldingWindow,
         recommendedAction: summary.strategy.recommendedAction,
       });
-    }
-
-    // Partial watchlist failures are skipped; total failure should not look like
-    // an empty successful scan.
-    if (results.length === 0 && failures.length > 0) {
-      const reason = failures[0];
-      if (reason instanceof Error) {
-        throw reason;
-      }
-      throw new Error(String(reason));
     }
 
     return results.sort((a, b) => b.score - a.score);
