@@ -105,16 +105,21 @@ export class MarketTodayService {
 
     // Ledger write only — does not alter ranking/scoring.
     if (this.predictionService) {
-      const winner = results.find(
-        (item) => item.ticker === decision.topOpportunity.ticker,
-      );
-      const recorded = await this.predictionService.recordFromToday(result, {
-        evaluationWindow: winner?.suggestedHoldingWindow ?? {
-          minDays: 1,
-          maxDays: 5,
-        },
-      });
-      result.predictionId = recorded?.id ?? null;
+      try {
+        const winner = results.find(
+          (item) => item.ticker === decision.topOpportunity.ticker,
+        );
+        const recorded = await this.predictionService.recordFromToday(result, {
+          evaluationWindow: winner?.suggestedHoldingWindow ?? {
+            minDays: 1,
+            maxDays: 5,
+          },
+        });
+        result.predictionId = recorded?.id ?? null;
+      } catch {
+        // Prediction ledger failures must not break Today's Move.
+        result.predictionId = null;
+      }
     }
 
     return result;

@@ -17,19 +17,21 @@ export function parsePortfolioCsv(csvText: string): CsvParseResult {
     };
   }
 
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const rawLines = text.split(/\r?\n/);
+  const lines = rawLines.map((line) => line.trim());
+  const nonEmptyIndexes = lines
+    .map((line, index) => (line.length > 0 ? index : -1))
+    .filter((index) => index >= 0);
 
-  if (lines.length === 0) {
+  if (nonEmptyIndexes.length === 0) {
     return {
       positions: [],
       errors: [{ line: 0, message: 'CSV file is empty.' }],
     };
   }
 
-  const headerCells = splitCsvLine(lines[0]).map((cell) =>
+  const headerLineIndex = nonEmptyIndexes[0];
+  const headerCells = splitCsvLine(lines[headerLineIndex]).map((cell) =>
     cell.trim().toLowerCase().replace(/\s+/g, ''),
   );
   const headerOk =
@@ -41,7 +43,7 @@ export function parsePortfolioCsv(csvText: string): CsvParseResult {
       positions: [],
       errors: [
         {
-          line: 1,
+          line: headerLineIndex + 1,
           message:
             'Invalid CSV header. Expected: ticker,shares,avgCost,currentPrice',
         },
@@ -53,7 +55,7 @@ export function parsePortfolioCsv(csvText: string): CsvParseResult {
   const errors: CsvParseResult['errors'] = [];
   const seen = new Set<string>();
 
-  for (let index = 1; index < lines.length; index += 1) {
+  for (const index of nonEmptyIndexes.slice(1)) {
     const lineNumber = index + 1;
     const cells = splitCsvLine(lines[index]);
     if (cells.every((cell) => cell.trim() === '')) {
