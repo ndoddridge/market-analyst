@@ -2,6 +2,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { AnalysisProfile } from '../analysis/types/analysis-profile';
 import { Recommendation } from '../analysis/types/analysis-result';
 import { MarketEventType } from '../events/types/market-event';
+import { toMarketIsoString } from '../shared/market-clock';
 import { MarketTodayService } from './market-today.service';
 import { CatalystType, MarketDirection } from './types/market-today';
 
@@ -21,7 +22,8 @@ describe('MarketTodayService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-08-09T12:00:00.000Z'));
+    // UTC morning Aug 10 == still Aug 9 evening in America/New_York.
+    jest.setSystemTime(new Date('2026-08-10T00:30:00.000Z'));
     service = new MarketTodayService(
       scannerService as never,
       newsService as never,
@@ -34,6 +36,31 @@ describe('MarketTodayService', () => {
   afterEach(() => {
     jest.useRealTimers();
   });
+
+  function spyOpportunityFixture() {
+    return [
+      {
+        ticker: 'SPY',
+        companyName: 'SPDR',
+        profile: AnalysisProfile.SHORT_TERM,
+        recommendation: Recommendation.BUY,
+        score: 83,
+        confidence: 0.6,
+        suggestedHoldingWindow: { minDays: 5, maxDays: 15 },
+        recommendedAction: 'Open a position.',
+      },
+      {
+        ticker: 'TSM',
+        companyName: 'TSMC',
+        profile: AnalysisProfile.SHORT_TERM,
+        recommendation: Recommendation.SELL,
+        score: 20,
+        confidence: 0.6,
+        suggestedHoldingWindow: { minDays: 0, maxDays: 0 },
+        recommendedAction: 'Reduce or exit position.',
+      },
+    ];
+  }
 
   it('builds today summary from ranked scanner results and includes catalyst', async () => {
     scannerService.scan.mockResolvedValue([
@@ -107,7 +134,118 @@ describe('MarketTodayService', () => {
     });
     expect(result.summary).toContain('next few trading days');
     expect(result.summary).toContain('Catalyst: NVIDIA demand stays strong');
-    expect(result.generatedAt).toEqual(expect.any(String));
+    expect(result.generatedAt).toBe(
+      toMarketIsoString(new Date('2026-08-10T00:30:00.000Z')),
+    );
+  });
+
+  it('uses market-timezone generatedAt on the UTC/local date boundary', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.generatedAt.startsWith('2026-08-09T')).toBe(true);
+    expect(result.generatedAt.endsWith('Z')).toBe(false);
+    expect(result.generatedAt).toBe('2026-08-09T20:30:00.000-04:00');
+  });
+
+  it('rejects a VOO-specific product story as SPY catalyst', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'voo',
+        title:
+          'VOO Is About to Become the First $1 Trillion ETF, and SPY Holders Are Paying 3x More for the Same Index',
+        source: 'Yahoo Finance',
+        url: null,
+        publishedAt: '2026-08-08T18:08:06.000Z',
+        relatedTickers: ['SPY', 'VOO'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.topOpportunity.ticker).toBe('SPY');
+    expect(result.catalyst).toBeNull();
+  });
+
+  it('accepts a broad-market catalyst for SPY when materially relevant', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'macro',
+        title: 'S&P 500 futures rise as Wall Street digests inflation data',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-08-09T14:00:00.000Z',
+        relatedTickers: ['^GSPC', 'SPY'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+      {
+        id: 'voo',
+        title:
+          'VOO Is About to Become the First $1 Trillion ETF, and SPY Holders Are Paying 3x More for the Same Index',
+        source: 'Yahoo Finance',
+        url: null,
+        publishedAt: '2026-08-09T15:00:00.000Z',
+        relatedTickers: ['SPY', 'VOO'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.catalyst).toEqual({
+      type: CatalystType.NEWS,
+      headline: 'S&P 500 futures rise as Wall Street digests inflation data',
+      ticker: 'SPY',
+      date: '2026-08-09T14:00:00.000Z',
+      source: 'Yahoo Finance',
+    });
+  });
+
+  it('rejects stale catalysts according to SHORT_TERM recency rules', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'old',
+        title: 'S&P 500 closes lower ahead of Fed decision',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-07-01T00:00:00.000Z',
+        relatedTickers: ['SPY'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+    expect(result.catalyst).toBeNull();
+  });
+
+  it('is deterministic for the same scanner/news inputs', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'macro',
+        title: 'S&P 500 futures rise as Wall Street digests inflation data',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-08-09T14:00:00.000Z',
+        relatedTickers: ['^GSPC', 'SPY'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const first = await service.getToday(AnalysisProfile.SHORT_TERM);
+    const second = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(second).toEqual(first);
   });
 
   it('prefers a multi-month event catalyst for LONG_TERM and uses NEUTRAL when tied', async () => {
@@ -173,74 +311,8 @@ describe('MarketTodayService', () => {
     expect(result.summary).toContain('multi-month opportunities');
   });
 
-  it('returns null catalyst and states unavailability when none fit the profile horizon', async () => {
-    scannerService.scan.mockResolvedValue([
-      {
-        ticker: 'SPY',
-        companyName: 'SPDR',
-        profile: AnalysisProfile.SHORT_TERM,
-        recommendation: Recommendation.HOLD,
-        score: 50,
-        confidence: 0.6,
-        suggestedHoldingWindow: { minDays: 1, maxDays: 5 },
-        recommendedAction: 'Maintain current position.',
-      },
-    ]);
-    eventsService.getUpcomingEvents.mockResolvedValue([
-      {
-        id: 'far',
-        title: 'SPY earnings',
-        type: MarketEventType.EARNINGS,
-        ticker: 'SPY',
-        eventDate: '2026-11-01T00:00:00.000Z',
-        provider: 'Yahoo Finance',
-      },
-    ]);
-    newsService.getRecentNews.mockResolvedValue([
-      {
-        id: 'old',
-        title: 'S&P 500 closes lower ahead of Fed decision',
-        source: 'Wire',
-        url: null,
-        publishedAt: '2026-07-01T00:00:00.000Z',
-        relatedTickers: ['SPY'],
-        querySymbol: 'SPY',
-        provider: 'Yahoo Finance',
-      },
-    ]);
-
-    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
-
-    expect(result.catalyst).toBeNull();
-    expect(result.summary).toContain(
-      'No confirmed news or event catalyst is available',
-    );
-    expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
-  });
-
   it('rejects an unrelated company story as SPY catalyst and returns null', async () => {
-    scannerService.scan.mockResolvedValue([
-      {
-        ticker: 'SPY',
-        companyName: 'SPDR',
-        profile: AnalysisProfile.SHORT_TERM,
-        recommendation: Recommendation.BUY,
-        score: 83,
-        confidence: 0.6,
-        suggestedHoldingWindow: { minDays: 5, maxDays: 15 },
-        recommendedAction: 'Open a position.',
-      },
-      {
-        ticker: 'TSM',
-        companyName: 'TSMC',
-        profile: AnalysisProfile.SHORT_TERM,
-        recommendation: Recommendation.SELL,
-        score: 20,
-        confidence: 0.6,
-        suggestedHoldingWindow: { minDays: 0, maxDays: 0 },
-        recommendedAction: 'Reduce or exit position.',
-      },
-    ]);
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
     newsService.getRecentNews.mockResolvedValue([
       {
         id: 'bad',

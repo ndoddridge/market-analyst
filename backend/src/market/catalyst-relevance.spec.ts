@@ -1,4 +1,8 @@
-import { isNewsRelevantToTicker } from './catalyst-relevance';
+import {
+  isNewsRelevantToTicker,
+  isPeerEtfProductStory,
+  scoreNewsCatalyst,
+} from './catalyst-relevance';
 import type { NewsItem } from '../news/types/news-item';
 
 function news(partial: Partial<NewsItem> & Pick<NewsItem, 'title'>): NewsItem {
@@ -15,6 +19,8 @@ function news(partial: Partial<NewsItem> & Pick<NewsItem, 'title'>): NewsItem {
 }
 
 describe('catalyst relevance', () => {
+  const now = new Date('2026-08-09T20:00:00.000Z');
+
   it('rejects an obviously unrelated company story tagged to SPY', () => {
     const item = news({
       title: 'Chinese wind turbine maker urges Burnham to overturn security ban',
@@ -23,19 +29,34 @@ describe('catalyst relevance', () => {
     });
 
     expect(isNewsRelevantToTicker(item, 'SPY')).toBe(false);
+    expect(scoreNewsCatalyst(item, 'SPY', now)).toBe(-1);
   });
 
-  it('rejects an unrelated story that only has SPY as querySymbol/fallback tag', () => {
+  it('rejects a VOO-only product story for SPY even when SPY holders are mentioned', () => {
     const item = news({
-      title: 'Chinese wind turbine maker urges Burnham to overturn security ban',
-      relatedTickers: [],
+      title:
+        'VOO Is About to Become the First $1 Trillion ETF, and SPY Holders Are Paying 3x More for the Same Index',
+      relatedTickers: ['SPY', 'VOO'],
       querySymbol: 'SPY',
     });
 
+    expect(isPeerEtfProductStory(item.title, 'SPY')).toBe(true);
     expect(isNewsRelevantToTicker(item, 'SPY')).toBe(false);
+    expect(scoreNewsCatalyst(item, 'SPY', now)).toBe(-1);
   });
 
-  it('accepts a broad market headline for SPY', () => {
+  it('accepts a direct SPY catalyst headline', () => {
+    const item = news({
+      title: 'SPY climbs as investors rotate into large-cap exposure',
+      relatedTickers: ['SPY'],
+      querySymbol: 'SPY',
+    });
+
+    expect(isNewsRelevantToTicker(item, 'SPY')).toBe(true);
+    expect(scoreNewsCatalyst(item, 'SPY', now)).toBeGreaterThan(100);
+  });
+
+  it('accepts a broad-market catalyst when materially relevant to SPY', () => {
     const item = news({
       title: 'S&P 500 futures rise as Wall Street digests inflation data',
       relatedTickers: ['^GSPC', 'SPY'],
@@ -43,16 +64,7 @@ describe('catalyst relevance', () => {
     });
 
     expect(isNewsRelevantToTicker(item, 'SPY')).toBe(true);
-  });
-
-  it('accepts an ETF headline that explicitly mentions SPY', () => {
-    const item = news({
-      title: 'VOO Is About to Become the First $1 Trillion ETF, and SPY Holders Are Paying 3x More',
-      relatedTickers: ['SPY', 'VOO'],
-      querySymbol: 'SPY',
-    });
-
-    expect(isNewsRelevantToTicker(item, 'SPY')).toBe(true);
+    expect(scoreNewsCatalyst(item, 'SPY', now)).toBeGreaterThan(0);
   });
 
   it('rejects a generic ETF article that never mentions SPY or the broad market', () => {
@@ -86,5 +98,25 @@ describe('catalyst relevance', () => {
 
     expect(isNewsRelevantToTicker(item, 'NVDA')).toBe(true);
     expect(isNewsRelevantToTicker(item, 'SPY')).toBe(false);
+  });
+
+  it('ranks a direct ticker catalyst above a broad-market article', () => {
+    const direct = news({
+      title: 'SPY attracts fresh inflows ahead of the open',
+      relatedTickers: ['SPY'],
+      querySymbol: 'SPY',
+      publishedAt: '2026-08-09T15:00:00.000Z',
+    });
+    const broad = news({
+      id: 'n2',
+      title: 'Wall Street futures steady after inflation report',
+      relatedTickers: ['^GSPC'],
+      querySymbol: 'SPY',
+      publishedAt: '2026-08-09T15:00:00.000Z',
+    });
+
+    expect(scoreNewsCatalyst(direct, 'SPY', now)).toBeGreaterThan(
+      scoreNewsCatalyst(broad, 'SPY', now),
+    );
   });
 });
