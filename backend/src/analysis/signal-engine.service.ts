@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { CompanyProfile } from '../company/types/company-profile';
 import {
+  AnalysisProfile,
+  DEFAULT_ANALYSIS_PROFILE,
+} from './types/analysis-profile';
+import {
   MarketTrend,
   TrendMomentum,
   type TrendAnalysis,
@@ -16,9 +20,35 @@ export class SignalEngineService {
   generateSignals(
     trendAnalysis: TrendAnalysis,
     company: CompanyProfile,
+    profile: AnalysisProfile = DEFAULT_ANALYSIS_PROFILE,
   ): Signal[] {
     const signals: Signal[] = [];
 
+    // Shared market signals (trend / momentum / volatility / recent movement).
+    // Profile-specific scoring is applied later in AnalysisService.
+    this.appendShortHorizonMarketSignals(signals, trendAnalysis);
+
+    // Company facts — informative context only; do not affect score.
+    this.appendCompanyFactSignals(signals, company);
+
+    if (profile === AnalysisProfile.LONG_TERM) {
+      this.appendLongTermSignals(signals, trendAnalysis, company);
+    }
+
+    // TODO: Add news sentiment signals (SignalCategory.NEWS).
+    // TODO: Add earnings-related signals.
+    // TODO: Add ETF strength signals (SignalCategory.MARKET).
+    // TODO: Add technical indicator signals (SignalCategory.TECHNICAL).
+    // TODO: Add insider trading signals.
+    // TODO: Add macroeconomic event signals.
+
+    return signals;
+  }
+
+  private appendShortHorizonMarketSignals(
+    signals: Signal[],
+    trendAnalysis: TrendAnalysis,
+  ): void {
     if (trendAnalysis.trend === MarketTrend.BULLISH) {
       signals.push({
         id: 'bullish-trend',
@@ -65,8 +95,12 @@ export class SignalEngineService {
         direction: SignalDirection.NEGATIVE,
       });
     }
+  }
 
-    // Company facts — informative context only; do not affect score.
+  private appendCompanyFactSignals(
+    signals: Signal[],
+    company: CompanyProfile,
+  ): void {
     if (company.marketCapitalization > 1_000_000_000_000) {
       signals.push({
         id: 'large-market-cap',
@@ -90,14 +124,19 @@ export class SignalEngineService {
         direction: SignalDirection.NEUTRAL,
       });
     }
+  }
 
-    // TODO: Add news sentiment signals (SignalCategory.NEWS).
-    // TODO: Add earnings-related signals.
-    // TODO: Add ETF strength signals (SignalCategory.MARKET).
-    // TODO: Add technical indicator signals (SignalCategory.TECHNICAL).
-    // TODO: Add insider trading signals.
-    // TODO: Add macroeconomic event signals.
-
-    return signals;
+  /**
+   * Extension point for LONG_TERM-only signals.
+   * Intentionally empty for now — do not invent fundamental analysis yet.
+   */
+  private appendLongTermSignals(
+    _signals: Signal[],
+    _trendAnalysis: TrendAnalysis,
+    _company: CompanyProfile,
+  ): void {
+    // TODO: Multi-year trend / drawdown context (still price-based).
+    // TODO: Fundamental quality signals once real fundamental data exists.
+    // TODO: Long-horizon regime / valuation signals when available.
   }
 }

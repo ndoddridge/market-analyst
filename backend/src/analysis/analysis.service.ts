@@ -5,6 +5,11 @@ import { SignalEngineService } from './signal-engine.service';
 import { StrategyEngineService } from './strategy-engine.service';
 import { TrendAnalysisService } from './trend-analysis.service';
 import {
+  AnalysisProfile,
+  DEFAULT_ANALYSIS_PROFILE,
+  PROFILE_SCORE_POLICIES,
+} from './types/analysis-profile';
+import {
   Recommendation,
   type AnalysisResult,
   type HoldingWindow,
@@ -28,7 +33,10 @@ export class AnalysisService {
     private readonly strategyEngineService: StrategyEngineService,
   ) {}
 
-  async analyze(symbol: string): Promise<AnalysisResult> {
+  async analyze(
+    symbol: string,
+    profile: AnalysisProfile = DEFAULT_ANALYSIS_PROFILE,
+  ): Promise<AnalysisResult> {
     const [marketData, company, trendAnalysis] = await Promise.all([
       this.marketService.getQuote(symbol),
       this.companyService.getCompanyProfile(symbol),
@@ -38,14 +46,16 @@ export class AnalysisService {
     const signals = this.signalEngineService.generateSignals(
       trendAnalysis,
       company,
+      profile,
     );
-    const score = this.scoreFromSignals(signals);
+    const score = this.scoreFromSignals(signals, profile);
     const recommendation = this.resolveRecommendation(score);
-    const holdingWindow = this.resolveHoldingWindow(recommendation);
-    const summary = this.buildSummary(company.name, signals);
+    const holdingWindow = this.resolveHoldingWindow(recommendation, profile);
+    const summary = this.buildSummary(company.name, signals, profile);
 
     return {
       symbol: marketData.symbol,
+      profile,
       score,
       confidence: 0.6,
       recommendation,
@@ -58,30 +68,41 @@ export class AnalysisService {
     };
   }
 
-  async analyzeSummary(symbol: string): Promise<AnalysisSummary> {
-    return this.toSummary(await this.analyze(symbol));
+  async analyzeSummary(
+    symbol: string,
+    profile: AnalysisProfile = DEFAULT_ANALYSIS_PROFILE,
+  ): Promise<AnalysisSummary> {
+    return this.toSummary(await this.analyze(symbol, profile));
   }
 
-  private scoreFromSignals(signals: Signal[]): number {
+  private scoreFromSignals(
+    signals: Signal[],
+    profile: AnalysisProfile,
+  ): number {
     // Recommendation engine scores market signals only — not company facts.
+    const policy = PROFILE_SCORE_POLICIES[profile];
     let score = 50;
 
     for (const signal of signals) {
       if (
-        signal.direction === SignalDirection.POSITIVE ||
-        signal.direction === SignalDirection.NEGATIVE
+        signal.direction !== SignalDirection.POSITIVE &&
+        signal.direction !== SignalDirection.NEGATIVE
       ) {
-        score += signal.weight;
+        continue;
       }
+
+      const multiplier = policy.categoryMultipliers[signal.category] ?? 1;
+      score += signal.weight * multiplier;
     }
 
-    return Math.min(100, Math.max(0, score));
+    return Math.min(100, Math.max(0, Math.round(score)));
   }
 
   private toSummary(result: AnalysisResult): AnalysisSummary {
     return {
       ticker: result.symbol,
       companyName: result.company.name,
+      profile: result.profile,
       recommendation: result.recommendation,
       score: result.score,
       confidence: result.confidence,
@@ -138,20 +159,39 @@ export class AnalysisService {
 
   private resolveHoldingWindow(
     recommendation: Recommendation,
+    profile: AnalysisProfile,
   ): HoldingWindow {
+    if (profile === AnalysisProfile.LONG_TERM) {
+      switch (recommendation) {
+        case Recommendation.BUY:
+          return { minDays: 180, maxDays: 730 };
+        case Recommendation.WATCH:
+          return { minDays: 90, maxDays: 180 };
+        case Recommendation.HOLD:
+          return { minDays: 90, maxDays: 365 };
+        case Recommendation.SELL:
+          return { minDays: 0, maxDays: 0 };
+      }
+    }
+
+    // SHORT_TERM — days to a few weeks.
     switch (recommendation) {
       case Recommendation.BUY:
-        return { minDays: 5, maxDays: 10 };
+        return { minDays: 5, maxDays: 15 };
       case Recommendation.WATCH:
-        return { minDays: 3, maxDays: 5 };
+        return { minDays: 3, maxDays: 10 };
       case Recommendation.HOLD:
-        return { minDays: 1, maxDays: 3 };
+        return { minDays: 1, maxDays: 5 };
       case Recommendation.SELL:
         return { minDays: 0, maxDays: 0 };
     }
   }
 
-  private buildSummary(companyName: string, signals: Signal[]): string {
+  private buildSummary(
+    companyName: string,
+    signals: Signal[],
+    profile: AnalysisProfile,
+  ): string {
     const traits: string[] = [];
 
     if (signals.some((signal) => signal.id === 'large-market-cap')) {
@@ -167,10 +207,11 @@ export class AnalysisService {
     const scoredSignals = signals.filter(
       (signal) => signal.direction !== SignalDirection.NEUTRAL,
     );
+    const horizon = PROFILE_SCORE_POLICIES[profile].holdingHorizon;
 
     return (
       `${companyName} is currently ${traitText}. ` +
-      `Recommendation is based on ${scoredSignals.length} scored market signal(s); ` +
+      `${profile} analysis (${horizon}) is based on ${scoredSignals.length} scored market signal(s); ` +
       `company facts are informational only.`
     );
   }

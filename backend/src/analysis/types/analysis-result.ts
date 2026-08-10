@@ -1,5 +1,6 @@
 import type { CompanyProfile } from '../../company/types/company-profile';
 import type { MarketQuote } from '../../market/types/market-quote';
+import type { AnalysisProfile } from './analysis-profile';
 import type { Signal } from './signal';
 import type { TrendAnalysis } from './trend-analysis';
 
@@ -17,6 +18,7 @@ export type HoldingWindow = {
 
 export type AnalysisResult = {
   symbol: string;
+  profile: AnalysisProfile;
   score: number;
   confidence: number;
   recommendation: Recommendation;
