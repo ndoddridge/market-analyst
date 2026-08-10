@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   DefaultValuePipe,
   Get,
@@ -8,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBody,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -16,7 +18,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PredictionService } from './prediction.service';
+import { EvaluatePredictionDto } from './types/evaluate-prediction.dto';
 import { PredictionRecord } from './types/prediction';
+import { PredictionHistoryScorecard } from './types/prediction-scorecard';
 
 @ApiTags('predictions')
 @Controller('predictions')
@@ -34,6 +38,17 @@ export class PredictionController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.predictionService.inspectRecent(limit);
+  }
+
+  @Get('history')
+  @ApiOperation({
+    summary: 'Prediction history scorecard',
+    description:
+      'Aggregate SHORT_TERM prediction outcomes: accuracy, returns, and breakdowns by ticker, setup quality, and score bucket.',
+  })
+  @ApiOkResponse({ type: PredictionHistoryScorecard })
+  getHistory(): Promise<PredictionHistoryScorecard> {
+    return this.predictionService.getHistoryScorecard();
   }
 
   @Get('ticker/:symbol')
@@ -63,14 +78,18 @@ export class PredictionController {
 
   @Post(':id/evaluate')
   @ApiOperation({
-    summary: 'Evaluate a prediction against the current market price',
+    summary: 'Evaluate a prediction deterministically',
     description:
-      'Attaches an outcome without rewriting the original prediction snapshot.',
+      'Accepts an optional evaluationPrice/evaluatedAt for deterministic testing, otherwise uses the live market quote provider. Idempotent once an outcome exists.',
   })
   @ApiParam({ name: 'id' })
+  @ApiBody({ type: EvaluatePredictionDto, required: false })
   @ApiOkResponse({ type: PredictionRecord })
   @ApiNotFoundResponse()
-  evaluate(@Param('id') id: string): Promise<PredictionRecord> {
-    return this.predictionService.evaluate(id);
+  evaluate(
+    @Param('id') id: string,
+    @Body() body: EvaluatePredictionDto = {},
+  ): Promise<PredictionRecord> {
+    return this.predictionService.evaluate(id, body ?? {});
   }
 }

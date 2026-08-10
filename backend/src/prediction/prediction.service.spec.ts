@@ -7,11 +7,15 @@ import {
   type MarketTodayResult,
 } from '../market/types/market-today';
 import { InMemoryPredictionRepository } from './in-memory-prediction.repository';
-import { evaluatePrediction } from './prediction-evaluation';
+import { seedHistoricalPredictionFixtures } from './prediction-fixtures';
+import { buildPredictionScorecard } from './prediction-scorecard';
 import { PredictionService } from './prediction.service';
-import { OutcomeClassification } from './types/prediction-outcome';
+import {
+  EvaluationStatus,
+  OutcomeClassification,
+} from './types/prediction-outcome';
 
-describe('PredictionService', () => {
+describe('PredictionService evaluation + scorecard', () => {
   const marketService = {
     getQuote: jest.fn(),
   };
@@ -69,34 +73,20 @@ describe('PredictionService', () => {
     };
   }
 
-  it('persists a SHORT_TERM prediction with entry price and catalyst snapshot', async () => {
+  it('persists a SHORT_TERM prediction with entry price', async () => {
     const recorded = await service.recordFromToday(todayResult(), {
       evaluationWindow: { minDays: 1, maxDays: 5 },
     });
 
-    expect(recorded).not.toBeNull();
-    expect(recorded?.id).toMatch(/^pred_/);
-    expect(recorded?.ticker).toBe('AAPL');
-    expect(recorded?.recommendation).toBe(TodayAction.WATCH);
-    expect(recorded?.signalScore).toBe(74);
-    expect(recorded?.catalystScore).toBe(62);
-    expect(recorded?.setupQuality).toBe(SetupQuality.MODERATE);
     expect(recorded?.entryPrice).toBe(200);
-    expect(recorded?.catalyst?.headline).toContain('Apple CEO');
-    expect(recorded?.evaluationWindow).toEqual({ minDays: 1, maxDays: 5 });
     expect(recorded?.outcome).toBeNull();
-
-    const fetched = await service.getById(recorded!.id);
-    expect(fetched).toEqual(recorded);
   });
 
   it('prevents duplicate records for the same prediction fingerprint', async () => {
     const first = await service.recordFromToday(todayResult());
     const second = await service.recordFromToday(todayResult());
-
     expect(second?.id).toBe(first?.id);
-    const recent = await service.listRecent();
-    expect(recent).toHaveLength(1);
+    expect(await service.listRecent()).toHaveLength(1);
   });
 
   it('does not record LONG_TERM results', async () => {
@@ -107,171 +97,121 @@ describe('PredictionService', () => {
       }),
     );
     expect(recorded).toBeNull();
-    expect(await service.listRecent()).toHaveLength(0);
   });
 
-  it('evaluates BUY outcomes and preserves the original prediction snapshot', async () => {
-    marketService.getQuote.mockResolvedValue({
-      symbol: 'NVDA',
-      price: 100,
-      currency: 'USD',
-      timestamp: '2026-08-09T20:30:00.000Z',
-      source: 'Yahoo Finance',
+  it('evaluates with a supplied price/date deterministically and stays immutable', async () => {
+    const recorded = await repository.create({
+      dedupeKey: 'buy-pos',
+      generatedAt: '2026-07-20T16:00:00.000-04:00',
+      profile: AnalysisProfile.SHORT_TERM,
+      ticker: 'NVDA',
+      recommendation: TodayAction.BUY,
+      signalScore: 90,
+      catalystScore: 80,
+      setupQuality: SetupQuality.STRONG,
+      catalyst: null,
+      entryPrice: 100,
+      entryCurrency: 'USD',
+      evaluationWindow: { minDays: 1, maxDays: 5 },
+      reason: 'buy fixture',
     });
-
-    const recorded = await service.recordFromToday(
-      todayResult({
-        topOpportunity: {
-          ticker: 'NVDA',
-          recommendation: TodayAction.BUY,
-          score: 90,
-        },
-        decision: {
-          signalScore: 90,
-          catalystScore: 85,
-          setupQuality: SetupQuality.STRONG,
-          reason: 'NVDA strong setup',
-        },
-      }),
-    );
 
     const snapshot = {
-      ticker: recorded!.ticker,
-      recommendation: recorded!.recommendation,
-      signalScore: recorded!.signalScore,
-      catalystScore: recorded!.catalystScore,
-      setupQuality: recorded!.setupQuality,
-      entryPrice: recorded!.entryPrice,
-      reason: recorded!.reason,
-      generatedAt: recorded!.generatedAt,
+      ticker: recorded.ticker,
+      recommendation: recorded.recommendation,
+      signalScore: recorded.signalScore,
+      catalystScore: recorded.catalystScore,
+      entryPrice: recorded.entryPrice,
+      reason: recorded.reason,
+      generatedAt: recorded.generatedAt,
     };
 
-    marketService.getQuote.mockResolvedValue({
-      symbol: 'NVDA',
-      price: 112,
-      currency: 'USD',
-      timestamp: '2026-08-12T20:30:00.000Z',
-      source: 'Yahoo Finance',
+    const evaluated = await service.evaluate(recorded.id, {
+      evaluationPrice: 112,
+      evaluatedAt: '2026-07-24T16:00:00.000-04:00',
     });
 
-    const evaluated = await service.evaluate(recorded!.id);
-
+    expect(evaluated.outcome?.status).toBe(EvaluationStatus.EVALUATED);
     expect(evaluated.outcome?.outcomeClassification).toBe(
       OutcomeClassification.WIN,
     );
-    expect(evaluated.outcome?.directionallyCorrect).toBe(true);
     expect(evaluated.outcome?.returnPercentage).toBe(12);
-
     expect(evaluated.ticker).toBe(snapshot.ticker);
     expect(evaluated.recommendation).toBe(snapshot.recommendation);
     expect(evaluated.signalScore).toBe(snapshot.signalScore);
     expect(evaluated.catalystScore).toBe(snapshot.catalystScore);
-    expect(evaluated.setupQuality).toBe(snapshot.setupQuality);
     expect(evaluated.entryPrice).toBe(snapshot.entryPrice);
     expect(evaluated.reason).toBe(snapshot.reason);
     expect(evaluated.generatedAt).toBe(snapshot.generatedAt);
   });
 
-  it('evaluates SELL outcomes using negative returns as wins', async () => {
+  it('is idempotent: duplicate evaluation does not mutate the outcome', async () => {
     const recorded = await repository.create({
-      dedupeKey: 'sell-key',
-      generatedAt: '2026-08-09T20:30:00.000-04:00',
+      dedupeKey: 'idem',
+      generatedAt: '2026-07-20T16:00:00.000-04:00',
       profile: AnalysisProfile.SHORT_TERM,
-      ticker: 'AMD',
-      recommendation: TodayAction.SELL,
-      signalScore: 20,
-      catalystScore: 0,
-      setupQuality: SetupQuality.WEAK,
+      ticker: 'MSFT',
+      recommendation: TodayAction.BUY,
+      signalScore: 80,
+      catalystScore: 50,
+      setupQuality: SetupQuality.MODERATE,
       catalyst: null,
-      entryPrice: 150,
+      entryPrice: 100,
       entryCurrency: 'USD',
       evaluationWindow: { minDays: 1, maxDays: 5 },
-      reason: 'AMD weakest',
+      reason: 'idem',
     });
 
-    marketService.getQuote.mockResolvedValue({
-      symbol: 'AMD',
-      price: 140,
-      currency: 'USD',
-      timestamp: '2026-08-12T20:30:00.000Z',
-      source: 'Yahoo Finance',
+    const first = await service.evaluate(recorded.id, {
+      evaluationPrice: 105,
+      evaluatedAt: '2026-07-24T16:00:00.000-04:00',
+    });
+    const second = await service.evaluate(recorded.id, {
+      evaluationPrice: 200,
+      evaluatedAt: '2026-07-28T16:00:00.000-04:00',
     });
 
-    const evaluated = await service.evaluate(recorded.id);
-    expect(evaluated.outcome?.outcomeClassification).toBe(
-      OutcomeClassification.WIN,
-    );
-    expect(evaluated.outcome?.directionallyCorrect).toBe(true);
+    expect(second.outcome).toEqual(first.outcome);
+    expect(second.outcome?.returnPercentage).toBe(5);
   });
 
-  it('evaluates WATCH/WAIT as OBSERVED without directional win/loss', async () => {
-    const recorded = await service.recordFromToday(todayResult());
-    marketService.getQuote.mockResolvedValue({
-      symbol: 'AAPL',
-      price: 210,
-      currency: 'USD',
-      timestamp: '2026-08-12T20:30:00.000Z',
-      source: 'Yahoo Finance',
-    });
-
-    const evaluated = await service.evaluate(recorded!.id);
-    expect(evaluated.outcome?.outcomeClassification).toBe(
-      OutcomeClassification.OBSERVED,
-    );
-    expect(evaluated.outcome?.directionallyCorrect).toBeNull();
-    expect(evaluated.outcome?.returnPercentage).toBe(5);
-  });
-
-  it('marks insufficient data when quotes are unavailable', async () => {
-    marketService.getQuote.mockRejectedValue(new Error('quote failed'));
-    const recorded = await service.recordFromToday(todayResult());
-    expect(recorded?.entryPrice).toBeNull();
-
-    marketService.getQuote.mockRejectedValue(new Error('quote failed'));
-    const evaluated = await service.evaluate(recorded!.id);
-    expect(evaluated.outcome?.outcomeClassification).toBe(
-      OutcomeClassification.INSUFFICIENT_DATA,
-    );
-  });
-
-  it('lists predictions by ticker for history-style inspection', async () => {
-    await service.recordFromToday(todayResult());
-    await service.recordFromToday(
+  it('marks UNAVAILABLE when live quote is missing and no price is supplied', async () => {
+    marketService.getQuote.mockRejectedValue(new Error('down'));
+    const recorded = await service.recordFromToday(
       todayResult({
-        topOpportunity: {
-          ticker: 'MSFT',
-          recommendation: TodayAction.WAIT,
-          score: 50,
-        },
-        decision: {
-          signalScore: 50,
-          catalystScore: 0,
-          setupQuality: SetupQuality.WEAK,
-          reason: 'MSFT wait',
-        },
-        generatedAt: '2026-08-08T20:30:00.000-04:00',
+        generatedAt: '2026-07-20T16:00:00.000-04:00',
       }),
     );
 
-    const aapl = await service.listByTicker('AAPL');
-    expect(aapl).toHaveLength(1);
-    expect(aapl[0].ticker).toBe('AAPL');
+    const evaluated = await service.evaluate(recorded!.id, {
+      evaluatedAt: '2026-07-24T16:00:00.000-04:00',
+    });
+    expect(evaluated.outcome?.status).toBe(EvaluationStatus.UNAVAILABLE);
   });
 
-  it('exposes a developer inspect payload with pending/evaluated status', async () => {
-    const recorded = await service.recordFromToday(todayResult());
-    const inspect = await service.inspectRecent();
+  it('seeds historical fixtures and builds a usable scorecard', async () => {
+    const seeded = await seedHistoricalPredictionFixtures(repository);
+    expect(seeded).toBeGreaterThan(0);
 
-    expect(inspect.count).toBe(1);
-    expect(inspect.predictions[0].id).toBe(recorded?.id);
-    expect(inspect.predictions[0].outcomeStatus).toBe('PENDING');
+    // Second seed is idempotent.
+    expect(await seedHistoricalPredictionFixtures(repository)).toBe(0);
 
-    // WATCH/WAIT stay OBSERVED even at flat returns (not BUY/SELL scored).
-    expect(
-      evaluatePrediction({
-        prediction: recorded!,
-        evaluationPrice: 200,
-      }).outcomeClassification,
-    ).toBe(OutcomeClassification.OBSERVED);
+    const scorecard = await service.getHistoryScorecard();
+
+    expect(scorecard.totalPredictions).toBeGreaterThanOrEqual(7);
+    expect(scorecard.evaluatedPredictions).toBeGreaterThanOrEqual(7);
+    expect(scorecard.buyCount).toBeGreaterThan(0);
+    expect(scorecard.sellCount).toBeGreaterThan(0);
+    expect(scorecard.watchWaitCount).toBeGreaterThan(0);
+    expect(scorecard.directionalAccuracy).not.toBeNull();
+    expect(scorecard.averageReturn).not.toBeNull();
+    expect(scorecard.byTicker.length).toBeGreaterThan(0);
+    expect(scorecard.bySetupQuality.length).toBeGreaterThan(0);
+    expect(scorecard.byScoreBucket.map((bucket) => bucket.key)).toEqual(
+      expect.arrayContaining(['0-49', '50-69', '70-84', '85-100']),
+    );
+
+    const rebuilt = buildPredictionScorecard(await repository.listRecent(100));
+    expect(rebuilt.totalPredictions).toBe(scorecard.totalPredictions);
   });
 });

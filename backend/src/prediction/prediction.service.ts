@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { AnalysisProfile } from '../analysis/types/analysis-profile';
 import { MarketService } from '../market/market.service';
@@ -11,20 +12,31 @@ import {
   buildPredictionDedupeKey,
   evaluatePrediction,
   isWithinEvaluationWindow,
+  resolveEvaluationStatus,
 } from './prediction-evaluation';
+import { seedHistoricalPredictionFixtures } from './prediction-fixtures';
 import { PredictionRepository } from './prediction.repository';
+import { buildPredictionScorecard } from './prediction-scorecard';
+import type { EvaluatePredictionDto } from './types/evaluate-prediction.dto';
 import type { PredictionRecord } from './types/prediction';
+import { EvaluationStatus } from './types/prediction-outcome';
+import type { PredictionHistoryScorecard } from './types/prediction-scorecard';
 
 export type RecordTodayPredictionOptions = {
   evaluationWindow?: { minDays: number; maxDays: number };
 };
 
 @Injectable()
-export class PredictionService {
+export class PredictionService implements OnModuleInit {
   constructor(
     private readonly repository: PredictionRepository,
     private readonly marketService: MarketService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Seed deterministic historical fixtures so /predictions/history works immediately.
+    await seedHistoricalPredictionFixtures(this.repository);
+  }
 
   /**
    * Persist the SHORT_TERM top-opportunity decision. No-op for LONG_TERM.
@@ -49,12 +61,16 @@ export class PredictionService {
     let entryCurrency: string | null = null;
     try {
       const quote = await this.marketService.getQuote(opportunity.ticker);
-      if (quote?.price != null && Number.isFinite(quote.price) && quote.price > 0) {
+      if (
+        quote?.price != null &&
+        Number.isFinite(quote.price) &&
+        quote.price > 0
+      ) {
         entryPrice = quote.price;
         entryCurrency = quote.currency ?? null;
       }
     } catch {
-      // Price is optional at record time; evaluation can still mark insufficient data.
+      // Price is optional at record time; evaluation can still mark unavailable.
     }
 
     const dedupeKey = buildPredictionDedupeKey({
@@ -105,7 +121,7 @@ export class PredictionService {
   }
 
   async listRecent(limit = 20): Promise<PredictionRecord[]> {
-    return this.repository.listRecent(Math.min(Math.max(limit, 1), 100));
+    return this.repository.listRecent(Math.min(Math.max(limit, 1), 200));
   }
 
   async listByTicker(
@@ -123,26 +139,49 @@ export class PredictionService {
   }
 
   /**
-   * Evaluate a stored prediction against the current market price.
-   * Attaches outcome without rewriting the original prediction snapshot.
+   * Deterministic evaluation against a supplied price/date or live market quote.
+   * Idempotent: already-evaluated predictions are returned unchanged.
    */
-  async evaluate(id: string, at: Date = new Date()): Promise<PredictionRecord> {
+  async evaluate(
+    id: string,
+    dto: EvaluatePredictionDto = {},
+  ): Promise<PredictionRecord> {
     const prediction = await this.getById(id);
 
-    let evaluationPrice: number | null = null;
-    try {
-      const quote = await this.marketService.getQuote(prediction.ticker);
-      if (quote?.price != null && Number.isFinite(quote.price)) {
-        evaluationPrice = quote.price;
+    // Idempotent — never rewrite an existing outcome.
+    if (prediction.outcome) {
+      return prediction;
+    }
+
+    let evaluationPrice: number | null =
+      dto.evaluationPrice != null && Number.isFinite(dto.evaluationPrice)
+        ? dto.evaluationPrice
+        : null;
+    let evaluatedAt = dto.evaluatedAt ? new Date(dto.evaluatedAt) : new Date();
+
+    if (dto.evaluatedAt && Number.isNaN(evaluatedAt.getTime())) {
+      throw new BadRequestException(
+        `Invalid evaluatedAt timestamp "${dto.evaluatedAt}".`,
+      );
+    }
+
+    if (evaluationPrice == null) {
+      try {
+        const quote = await this.marketService.getQuote(prediction.ticker);
+        if (quote?.price != null && Number.isFinite(quote.price)) {
+          evaluationPrice = quote.price;
+        }
+      } catch {
+        evaluationPrice = null;
       }
-    } catch {
-      evaluationPrice = null;
     }
 
     const outcome = evaluatePrediction({
       prediction,
-      evaluationPrice,
-      evaluatedAt: at,
+      observation: {
+        price: evaluationPrice,
+        observedAt: evaluatedAt,
+      },
     });
 
     const updated = await this.repository.attachOutcome(prediction.id, outcome);
@@ -150,6 +189,13 @@ export class PredictionService {
       throw new NotFoundException(`Prediction "${id}" was not found.`);
     }
     return updated;
+  }
+
+  async getHistoryScorecard(): Promise<PredictionHistoryScorecard> {
+    // Ensure fixtures exist for a usable scorecard without waiting real days.
+    await seedHistoricalPredictionFixtures(this.repository);
+    const predictions = await this.repository.listRecent(500);
+    return buildPredictionScorecard(predictions);
   }
 
   /**
@@ -167,7 +213,7 @@ export class PredictionService {
       entryPrice: number | null;
       evaluationWindow: { minDays: number; maxDays: number };
       withinWindow: boolean;
-      outcomeStatus: string;
+      outcomeStatus: EvaluationStatus;
       outcome: PredictionRecord['outcome'];
     }>;
   }> {
@@ -186,7 +232,7 @@ export class PredictionService {
         entryPrice: prediction.entryPrice,
         evaluationWindow: prediction.evaluationWindow,
         withinWindow: isWithinEvaluationWindow(prediction, now),
-        outcomeStatus: prediction.outcome?.outcomeClassification ?? 'PENDING',
+        outcomeStatus: resolveEvaluationStatus(prediction),
         outcome: prediction.outcome,
       })),
     };

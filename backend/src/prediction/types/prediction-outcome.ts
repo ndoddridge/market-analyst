@@ -1,20 +1,36 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Lifecycle status of a prediction evaluation attempt.
+ * Separate from WIN/LOSS/OBSERVED classification.
+ */
+export enum EvaluationStatus {
+  PENDING = 'PENDING',
+  EVALUATED = 'EVALUATED',
+  UNAVAILABLE = 'UNAVAILABLE',
+  INVALID = 'INVALID',
+}
+
+/**
+ * Directional / observational classification once an evaluation completes.
+ */
 export enum OutcomeClassification {
   WIN = 'WIN',
   LOSS = 'LOSS',
   BREAKEVEN = 'BREAKEVEN',
   /** WATCH/WAIT observations — not scored as directional wins/losses. */
   OBSERVED = 'OBSERVED',
-  INSUFFICIENT_DATA = 'INSUFFICIENT_DATA',
 }
 
 export class PredictionOutcome {
   @ApiProperty()
   predictionId: string;
 
+  @ApiProperty({ enum: EvaluationStatus })
+  status: EvaluationStatus;
+
   @ApiProperty({
-    description: 'When the outcome was evaluated (market-timezone ISO).',
+    description: 'When the outcome was evaluated (ISO).',
   })
   evaluatedAt: string;
 
@@ -33,16 +49,26 @@ export class PredictionOutcome {
   @ApiPropertyOptional({
     nullable: true,
     description:
-      'True/false for BUY/SELL directional correctness; null for WATCH/WAIT or missing data.',
+      'True/false for BUY/SELL directional correctness; null for WATCH/WAIT, flat, or non-evaluated states.',
   })
   directionallyCorrect: boolean | null;
 
-  @ApiProperty({ enum: OutcomeClassification })
-  outcomeClassification: OutcomeClassification;
+  @ApiPropertyOptional({
+    enum: OutcomeClassification,
+    nullable: true,
+    description: 'Set when status is EVALUATED; otherwise null.',
+  })
+  outcomeClassification: OutcomeClassification | null;
 
   @ApiProperty({
     description: 'Calendar days elapsed since prediction generation (market TZ).',
     example: 3,
   })
   daysElapsed: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Human-readable note for INVALID/UNAVAILABLE outcomes.',
+  })
+  detail: string | null;
 }
