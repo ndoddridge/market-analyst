@@ -43,7 +43,7 @@ type CatalystPick = {
   note: string | null;
 };
 
-type RankedCandidate = {
+export type RankedCandidate = {
   result: ScannerResult;
   actionScore: number;
   catalyst: MarketTodayCatalyst | null;

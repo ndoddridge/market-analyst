@@ -12,6 +12,7 @@ import { RecommendationsModule } from './recommendations/recommendations.module'
 import { NotificationsModule } from './notifications/notifications.module';
 import { SharedModule } from './shared/shared.module';
 import { PredictionModule } from './prediction/prediction.module';
+import { PortfolioModule } from './portfolio/portfolio.module';
 import { TodayModule } from './today/today.module';
 
 @Module({
@@ -29,6 +30,7 @@ import { TodayModule } from './today/today.module';
     SharedModule,
     TodayModule,
     PredictionModule,
+    PortfolioModule,
   ],
   providers: [ConfigService],
   exports: [ConfigService],

@@ -26,6 +26,12 @@ async function bootstrap() {
   httpAdapter.get('/', (_req: unknown, res: { sendFile: (path: string) => void }) => {
     res.sendFile(join(__dirname, '..', 'public', 'index.html'));
   });
+  httpAdapter.get(
+    '/positions',
+    (_req: unknown, res: { sendFile: (path: string) => void }) => {
+      res.sendFile(join(__dirname, '..', 'public', 'positions.html'));
+    },
+  );
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
