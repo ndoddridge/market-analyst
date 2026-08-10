@@ -14,6 +14,27 @@
   let positions = loadPositions();
   let requestId = 0;
 
+  function isValidPosition(row) {
+    if (!row || typeof row !== "object") {
+      return false;
+    }
+    const ticker = String(row.ticker || "")
+      .trim()
+      .toUpperCase();
+    const shares = Number(row.shares);
+    const avgCost = Number(row.avgCost);
+    const currentPrice = Number(row.currentPrice);
+    return (
+      /^[A-Z][A-Z0-9.\-]{0,9}$/.test(ticker) &&
+      Number.isFinite(shares) &&
+      shares > 0 &&
+      Number.isFinite(avgCost) &&
+      avgCost > 0 &&
+      Number.isFinite(currentPrice) &&
+      currentPrice > 0
+    );
+  }
+
   function loadPositions() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -21,7 +42,28 @@
         return [];
       }
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      const cleaned = [];
+      const seen = new Set();
+      for (const row of parsed) {
+        if (!isValidPosition(row)) {
+          continue;
+        }
+        const ticker = String(row.ticker).trim().toUpperCase();
+        if (seen.has(ticker)) {
+          continue;
+        }
+        seen.add(ticker);
+        cleaned.push({
+          ticker,
+          shares: Number(row.shares),
+          avgCost: Number(row.avgCost),
+          currentPrice: Number(row.currentPrice),
+        });
+      }
+      return cleaned;
     } catch {
       return [];
     }
@@ -30,6 +72,27 @@
   function savePositions() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
     clearBtn.hidden = positions.length === 0;
+  }
+
+  function clearAnalysisView() {
+    summaryEl.hidden = true;
+    summaryEl.innerHTML = "";
+    actionsSection.hidden = true;
+    actionsList.innerHTML = "";
+    cardsEl.innerHTML = "";
+  }
+
+  function formatApiError(payload, fallback) {
+    if (!payload) {
+      return fallback;
+    }
+    if (typeof payload.message === "string") {
+      return payload.message;
+    }
+    if (Array.isArray(payload.message)) {
+      return payload.message.join(" ");
+    }
+    return fallback;
   }
 
   function setStatus(kind, message) {
@@ -169,9 +232,7 @@
 
   async function analyze() {
     if (positions.length === 0) {
-      summaryEl.hidden = true;
-      actionsSection.hidden = true;
-      cardsEl.innerHTML = "";
+      clearAnalysisView();
       setStatus("", "");
       return;
     }
@@ -187,7 +248,9 @@
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.message || `Request failed (${response.status})`);
+        throw new Error(
+          formatApiError(payload, `Request failed (${response.status})`),
+        );
       }
       const data = await response.json();
       if (current !== requestId) {
@@ -201,6 +264,7 @@
       if (current !== requestId) {
         return;
       }
+      clearAnalysisView();
       setStatus(
         "error",
         error instanceof Error
@@ -227,7 +291,7 @@
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || "CSV parse failed");
+        throw new Error(formatApiError(data, "CSV parse failed"));
       }
 
       if (data.positions?.length) {
@@ -242,6 +306,7 @@
           : "";
 
       if (positions.length === 0) {
+        clearAnalysisView();
         setStatus("error", errorText || "No valid positions found in CSV.");
         return;
       }
@@ -263,11 +328,10 @@
   });
 
   clearBtn.addEventListener("click", () => {
+    requestId += 1;
     positions = [];
     savePositions();
-    summaryEl.hidden = true;
-    actionsSection.hidden = true;
-    cardsEl.innerHTML = "";
+    clearAnalysisView();
     setStatus("", "");
   });
 

@@ -187,4 +187,16 @@ describe('position move + P/L', () => {
     expect(calculateUnrealizedPlPercent(285, 313.33)).toBeCloseTo(9.94, 2);
     expect(calculateUnrealizedPlPercent(180, 165.2)).toBeCloseTo(-8.22, 2);
   });
+
+  it('preserves original CSV line numbers when blank lines are present', () => {
+    const csv = `ticker,shares,avgCost,currentPrice
+
+AAPL,10,285,313
+
+BAD,0,1,1
+`;
+    const result = parsePortfolioCsv(csv);
+    expect(result.positions[0].ticker).toBe('AAPL');
+    expect(result.errors.some((error) => error.line === 5)).toBe(true);
+  });
 });

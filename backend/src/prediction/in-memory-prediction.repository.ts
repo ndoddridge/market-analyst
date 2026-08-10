@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PredictionRepository } from './prediction.repository';
 import type { CreatePredictionInput, PredictionRecord } from './types/prediction';
-import type { PredictionOutcome } from './types/prediction-outcome';
+import {
+  EvaluationStatus,
+  type PredictionOutcome,
+} from './types/prediction-outcome';
 
 function freezePrediction(record: PredictionRecord): PredictionRecord {
   return Object.freeze({
@@ -75,6 +78,11 @@ export class InMemoryPredictionRepository extends PredictionRepository {
     const existing = this.byId.get(predictionId);
     if (!existing) {
       return null;
+    }
+
+    // Never mutate a completed EVALUATED outcome (immutability guarantee).
+    if (existing.outcome?.status === EvaluationStatus.EVALUATED) {
+      return existing;
     }
 
     // Preserve original snapshot fields exactly; only swap the outcome pointer.

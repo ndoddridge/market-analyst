@@ -175,6 +175,43 @@ describe('PredictionService evaluation + scorecard', () => {
     expect(second.outcome?.returnPercentage).toBe(5);
   });
 
+  it('allows retry after UNAVAILABLE, but locks once EVALUATED', async () => {
+    const recorded = await repository.create({
+      dedupeKey: 'retry-unavail',
+      generatedAt: '2026-07-20T16:00:00.000-04:00',
+      profile: AnalysisProfile.SHORT_TERM,
+      ticker: 'AMD',
+      recommendation: TodayAction.SELL,
+      signalScore: 20,
+      catalystScore: 0,
+      setupQuality: SetupQuality.WEAK,
+      catalyst: null,
+      entryPrice: 100,
+      entryCurrency: 'USD',
+      evaluationWindow: { minDays: 1, maxDays: 5 },
+      reason: 'retry',
+    });
+
+    marketService.getQuote.mockRejectedValue(new Error('down'));
+    const unavailable = await service.evaluate(recorded.id, {
+      evaluatedAt: '2026-07-24T16:00:00.000-04:00',
+    });
+    expect(unavailable.outcome?.status).toBe(EvaluationStatus.UNAVAILABLE);
+
+    const recovered = await service.evaluate(recorded.id, {
+      evaluationPrice: 90,
+      evaluatedAt: '2026-07-24T16:00:00.000-04:00',
+    });
+    expect(recovered.outcome?.status).toBe(EvaluationStatus.EVALUATED);
+    expect(recovered.outcome?.returnPercentage).toBe(-10);
+
+    const locked = await service.evaluate(recorded.id, {
+      evaluationPrice: 50,
+      evaluatedAt: '2026-07-25T16:00:00.000-04:00',
+    });
+    expect(locked.outcome).toEqual(recovered.outcome);
+  });
+
   it('marks UNAVAILABLE when live quote is missing and no price is supplied', async () => {
     marketService.getQuote.mockRejectedValue(new Error('down'));
     const recorded = await service.recordFromToday(

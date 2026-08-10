@@ -116,6 +116,12 @@ export class PortfolioService {
   private normalizePositions(
     input: PortfolioPositionInput[],
   ): PortfolioPositionInput[] {
+    if (!Array.isArray(input)) {
+      throw new BadRequestException(
+        'positions must be an array of portfolio holdings.',
+      );
+    }
+
     const seen = new Set<string>();
     const positions: PortfolioPositionInput[] = [];
 
@@ -181,10 +187,9 @@ export class PortfolioService {
     let bullish = 0;
     let bearish = 0;
     for (const card of cards) {
-      if (
-        card.scannerRecommendation === TodayAction.BUY ||
-        card.scannerRecommendation === TodayAction.WATCH
-      ) {
+      // Only explicit BUY/SELL bias market direction — WATCH/WAIT stay neutral
+      // so missing-scanner fallbacks cannot invent a bullish portfolio tilt.
+      if (card.scannerRecommendation === TodayAction.BUY) {
         bullish += 1;
       } else if (card.scannerRecommendation === TodayAction.SELL) {
         bearish += 1;

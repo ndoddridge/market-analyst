@@ -148,8 +148,9 @@ export class PredictionService implements OnModuleInit {
   ): Promise<PredictionRecord> {
     const prediction = await this.getById(id);
 
-    // Idempotent — never rewrite an existing outcome.
-    if (prediction.outcome) {
+    // Idempotent for completed evaluations — never rewrite EVALUATED outcomes.
+    // INVALID/UNAVAILABLE may be retried once the window opens or a price is available.
+    if (prediction.outcome?.status === EvaluationStatus.EVALUATED) {
       return prediction;
     }
 
