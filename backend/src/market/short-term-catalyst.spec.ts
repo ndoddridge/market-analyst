@@ -89,4 +89,16 @@ describe('short-term catalyst quality', () => {
     expect(isMeaningfulShortTermNewsCatalyst(item, 'NVDA')).toBe(true);
     expect(isMeaningfulShortTermNewsCatalyst(item, 'SPY')).toBe(false);
   });
+
+  it('rejects peer-comparison headlines where the ticker is only secondary', () => {
+    const item = news({
+      title:
+        'Marvell (MRVL) vs. AVGO and NVDA: Can AI Interconnect Growth Deliver the Earnings Its Premium Valuation Demands?',
+      relatedTickers: ['MRVL', 'AVGO', 'NVDA'],
+      querySymbol: 'NVDA',
+    });
+
+    expect(isMeaningfulShortTermNewsCatalyst(item, 'NVDA')).toBe(false);
+    expect(scoreShortTermNewsCatalyst(item, 'NVDA', now)).toBe(-1);
+  });
 });

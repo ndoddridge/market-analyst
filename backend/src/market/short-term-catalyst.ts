@@ -180,13 +180,24 @@ const COMPANY_SUBSTANCE_TERMS = [
  */
 export const SHORT_TERM_NEWS_BOOST_MIN_SCORE = 25;
 
+function titleContainsTerm(titleLower: string, term: string): boolean {
+  // Short tokens need word boundaries ("fee" must not match "coffee").
+  if (term.trim().length <= 4) {
+    const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(
+      titleLower,
+    );
+  }
+  return titleLower.includes(term);
+}
+
 export function isEtfOrFundProductOrPromoStory(title: string): boolean {
   const lower = title.toLowerCase();
   if (!lower.trim()) {
     return false;
   }
 
-  if (ETF_FUND_PRODUCT_PROMO_TERMS.some((term) => lower.includes(term))) {
+  if (ETF_FUND_PRODUCT_PROMO_TERMS.some((term) => titleContainsTerm(lower, term))) {
     return true;
   }
 
@@ -232,6 +243,48 @@ export function hasPriceActionLanguage(title: string): boolean {
 function hasCompanySubstance(title: string): boolean {
   const lower = title.toLowerCase();
   return COMPANY_SUBSTANCE_TERMS.some((term) => lower.includes(term));
+}
+
+/**
+ * True when the headline is primarily about another equity, with the target
+ * only as a secondary comparison (e.g. "Marvell (MRVL) vs. AVGO and NVDA").
+ */
+function isSecondaryTickerMention(item: NewsItem, ticker: string): boolean {
+  const target = ticker.toUpperCase();
+  const title = item.title;
+  if (!headlineMentionsTicker(title, target)) {
+    return false;
+  }
+
+  const upper = title.toUpperCase();
+  const targetIdx = upper.search(new RegExp(`\\b${target}\\b`));
+  if (targetIdx < 0) {
+    return false;
+  }
+
+  const relatedOthers = item.relatedTickers
+    .map((value) => value.toUpperCase())
+    .filter(
+      (value) =>
+        value !== target &&
+        !value.startsWith('^') &&
+        !isBroadMarketEtf(value),
+    );
+
+  for (const other of relatedOthers) {
+    const idx = upper.search(new RegExp(`\\b${other}\\b`));
+    if (idx >= 0 && idx < targetIdx) {
+      return true;
+    }
+  }
+
+  // "Company (TICK) vs. ..." lead-ins where TICK is not the opportunity.
+  const lead = title.match(/^([A-Za-z][A-Za-z0-9.&'-]+)\s+\(([A-Z]{1,5})\)/);
+  if (lead && lead[2] !== target) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -282,6 +335,10 @@ export function isMeaningfulShortTermNewsCatalyst(
   }
 
   // Single-name: require a directly relevant company angle, not loose adjacency.
+  if (isSecondaryTickerMention(item, ticker)) {
+    return false;
+  }
+
   if (headlineMentionsTicker(title, ticker)) {
     return true;
   }
