@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0f1c24" />
+    <title>Market Analyst — Today’s Move</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+    <main class="shell">
+      <header class="brand-bar">
+        <p class="brand">Market Analyst</p>
+        <p class="brand-sub">Today’s Move</p>
+      </header>
+
+      <section class="profile-panel" aria-label="Analysis profile">
+        <div class="profile-switch" role="tablist" aria-label="Profile">
+          <button
+            type="button"
+            class="profile-btn is-active"
+            role="tab"
+            aria-selected="true"
+            data-profile="SHORT_TERM"
+          >
+            Short term
+          </button>
+          <button
+            type="button"
+            class="profile-btn"
+            role="tab"
+            aria-selected="false"
+            data-profile="LONG_TERM"
+          >
+            Long term
+          </button>
+        </div>
+      </section>
+
+      <section id="status" class="status" aria-live="polite" hidden></section>
+
+      <section id="dashboard" class="dashboard" hidden>
+        <section class="move">
+          <p class="move-label">Market direction</p>
+          <h1 id="direction" class="direction">—</h1>
+          <p id="horizon" class="horizon"></p>
+
+          <div class="picks">
+            <article class="pick pick-opportunity">
+              <p class="pick-label">Top opportunity</p>
+              <p id="opp-ticker" class="pick-ticker">—</p>
+              <p class="pick-meta">
+                <span id="opp-rec">—</span>
+                <span id="opp-score" class="score">—</span>
+              </p>
+            </article>
+            <article class="pick pick-risk">
+              <p class="pick-label">Top risk</p>
+              <p id="risk-ticker" class="pick-ticker">—</p>
+              <p class="pick-meta">
+                <span id="risk-rec">—</span>
+                <span id="risk-score" class="score">—</span>
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="catalyst" aria-label="Catalyst">
+          <p class="catalyst-label">Catalyst</p>
+          <div id="catalyst-body" class="catalyst-body"></div>
+        </section>
+
+        <details class="why">
+          <summary>Why?</summary>
+          <div class="why-body">
+            <p id="summary"></p>
+            <p id="generated" class="generated"></p>
+          </div>
+        </details>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
