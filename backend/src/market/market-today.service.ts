@@ -13,7 +13,11 @@ import { NewsService } from '../news/news.service';
 import type { NewsItem } from '../news/types/news-item';
 import { ScannerService } from '../scanner/scanner.service';
 import type { ScannerResult } from '../scanner/types/scanner-result';
-import { isNewsRelevantToTicker } from './catalyst-relevance';
+import {
+  marketCalendarDaysBetween,
+  toMarketIsoString,
+} from '../shared/market-clock';
+import { scoreNewsCatalyst } from './catalyst-relevance';
 import {
   CatalystType,
   MarketDirection,
@@ -38,6 +42,7 @@ export class MarketTodayService {
   async getToday(
     profile: AnalysisProfile = DEFAULT_ANALYSIS_PROFILE,
   ): Promise<MarketTodayResult> {
+    const now = new Date();
     const results = await this.scannerService.scan({ profile });
 
     if (results.length === 0) {
@@ -54,6 +59,7 @@ export class MarketTodayService {
       profile,
       topOpportunity,
       topRisk,
+      now,
     );
     const summary = this.buildSummary(
       profile,
@@ -70,7 +76,7 @@ export class MarketTodayService {
       topRisk,
       catalyst,
       summary,
-      generatedAt: new Date().toISOString(),
+      generatedAt: toMarketIsoString(now),
     };
   }
 
@@ -135,6 +141,7 @@ export class MarketTodayService {
     profile: AnalysisProfile,
     topOpportunity: MarketTodayPick,
     topRisk: MarketTodayPick,
+    now: Date,
   ): Promise<MarketTodayCatalyst | null> {
     const focusTickers = [
       ...new Set([
@@ -150,11 +157,12 @@ export class MarketTodayService {
       this.newsService.getRecentNews(focusTickers),
     ]);
 
+    // Preference order: direct ticker event → strong relevant news → null.
     const eventCatalyst = this.pickEventCatalyst(
       profile,
       events,
       topOpportunity.ticker,
-      topRisk.ticker,
+      now,
     );
     if (eventCatalyst) {
       return eventCatalyst;
@@ -164,7 +172,7 @@ export class MarketTodayService {
       profile,
       news,
       topOpportunity.ticker,
-      topRisk.ticker,
+      now,
     );
   }
 
@@ -172,27 +180,23 @@ export class MarketTodayService {
     profile: AnalysisProfile,
     events: MarketEvent[],
     opportunityTicker: string,
-    riskTicker: string,
+    now: Date,
   ): MarketTodayCatalyst | null {
-    const now = Date.now();
     const filtered = events.filter((event) => {
       const ts = new Date(event.eventDate).getTime();
       if (Number.isNaN(ts)) {
         return false;
       }
 
-      const daysAhead = (ts - now) / DAY_MS;
+      const daysAhead = (ts - now.getTime()) / DAY_MS;
 
       if (profile === AnalysisProfile.SHORT_TERM) {
-        // Next few trading days (~2 weeks calendar).
         return daysAhead >= -1 && daysAhead <= 14;
       }
 
-      // Multi-month opportunity window.
       return daysAhead >= 30 && daysAhead <= 365;
     });
 
-    // Only opportunity-ticker events — never an unrelated name (e.g. risk ETF filler).
     const preferred =
       filtered.find((event) => event.ticker === opportunityTicker) ?? null;
 
@@ -213,24 +217,26 @@ export class MarketTodayService {
     profile: AnalysisProfile,
     news: NewsItem[],
     opportunityTicker: string,
-    _riskTicker: string,
+    now: Date,
   ): MarketTodayCatalyst | null {
-    const now = Date.now();
     const maxAgeDays = profile === AnalysisProfile.SHORT_TERM ? 3 : 30;
 
-    const recent = news.filter((item) => {
-      const ts = new Date(item.publishedAt).getTime();
-      if (Number.isNaN(ts)) {
-        return false;
-      }
-      return now - ts <= maxAgeDays * DAY_MS;
-    });
+    const candidates = news
+      .filter((item) => {
+        const published = new Date(item.publishedAt);
+        if (Number.isNaN(published.getTime())) {
+          return false;
+        }
+        return marketCalendarDaysBetween(published, now) <= maxAgeDays;
+      })
+      .map((item) => ({
+        item,
+        score: scoreNewsCatalyst(item, opportunityTicker, now),
+      }))
+      .filter((entry) => entry.score >= 0)
+      .sort((a, b) => b.score - a.score);
 
-    // Opportunity-first: ticker-specific or genuinely broad-market for ETFs only.
-    const preferred =
-      recent.find((item) => isNewsRelevantToTicker(item, opportunityTicker)) ??
-      null;
-
+    const preferred = candidates[0]?.item;
     if (!preferred) {
       return null;
     }
