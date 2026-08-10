@@ -168,7 +168,6 @@ const COMPANY_SUBSTANCE_TERMS = [
   'demand',
   'orders',
   'chip',
-  'product',
   'launch',
   'lawsuit',
   'probe',
@@ -184,12 +183,16 @@ const COMPANY_SUBSTANCE_TERMS = [
   'price target',
   'beats',
   'misses',
+  'miss ',
   'raises',
   'cuts',
   'recall',
   'fda',
   'contract',
   'partnership',
+  'antitrust',
+  'regulation',
+  'layoffs',
 ];
 
 /**
@@ -420,7 +423,11 @@ export function isMeaningfulShortTermNewsCatalyst(
     return false;
   }
 
-  if (headlineMentionsTicker(title, ticker)) {
+  // Direct ticker mention still needs a price-relevant hook (not minor app fluff).
+  if (
+    headlineMentionsTicker(title, ticker) &&
+    (hasCompanySubstance(title) || hasPriceActionLanguage(title))
+  ) {
     return true;
   }
 
