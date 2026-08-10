@@ -9,6 +9,8 @@
   const oppTickerEl = document.getElementById("opp-ticker");
   const oppRecEl = document.getElementById("opp-rec");
   const oppScoreEl = document.getElementById("opp-score");
+  const setupQualityEl = document.getElementById("setup-quality");
+  const decisionReasonEl = document.getElementById("decision-reason");
   const riskTickerEl = document.getElementById("risk-ticker");
   const riskRecEl = document.getElementById("risk-rec");
   const riskScoreEl = document.getElementById("risk-score");
@@ -75,6 +77,34 @@
       `${formatDate(catalyst.date)} · ${catalyst.source}${ticker}`;
   }
 
+  function renderDecisionEvidence(data) {
+    const decision = data.decision;
+    const isShortTerm = data.profile === "SHORT_TERM" && decision;
+
+    if (!isShortTerm) {
+      setupQualityEl.hidden = true;
+      setupQualityEl.textContent = "";
+      setupQualityEl.removeAttribute("data-quality");
+      decisionReasonEl.hidden = true;
+      decisionReasonEl.textContent = "";
+      return;
+    }
+
+    const label =
+      decision.setupQuality === "STRONG"
+        ? "Strong"
+        : decision.setupQuality === "MODERATE"
+          ? "Moderate"
+          : "Weak";
+
+    setupQualityEl.hidden = false;
+    setupQualityEl.dataset.quality = decision.setupQuality;
+    setupQualityEl.textContent = `Setup quality: ${label}`;
+
+    decisionReasonEl.hidden = false;
+    decisionReasonEl.textContent = decision.reason || data.reason || "";
+  }
+
   function renderDashboard(data) {
     directionEl.textContent = data.marketDirection;
     directionEl.dataset.dir = data.marketDirection;
@@ -91,6 +121,7 @@
     riskRecEl.textContent = data.topRisk.recommendation;
     riskScoreEl.textContent = `Score ${data.topRisk.score}`;
 
+    renderDecisionEvidence(data);
     renderCatalyst(data.catalyst);
     reasonEl.textContent = data.reason || "";
     summaryEl.textContent = data.summary;

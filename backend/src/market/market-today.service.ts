@@ -22,6 +22,7 @@ import { decideShortTermOpportunity } from './short-term-decision';
 import {
   CatalystType,
   MarketDirection,
+  TodayAction,
   type MarketTodayCatalyst,
   type MarketTodayPick,
   type MarketTodayResult,
@@ -88,6 +89,7 @@ export class MarketTodayService {
       topOpportunity: decision.topOpportunity,
       topRisk: decision.topRisk,
       catalyst: decision.catalyst,
+      decision: decision.decision,
       reason: decision.reason,
       summary,
       generatedAt: toMarketIsoString(now),
@@ -125,6 +127,7 @@ export class MarketTodayService {
       topOpportunity,
       topRisk,
       catalyst,
+      decision: null,
       reason,
       summary,
       generatedAt: toMarketIsoString(now),
@@ -147,9 +150,22 @@ export class MarketTodayService {
   private toPick(result: ScannerResult): MarketTodayPick {
     return {
       ticker: result.ticker,
-      recommendation: result.recommendation,
+      recommendation: this.toTodayAction(result.recommendation),
       score: result.score,
     };
+  }
+
+  private toTodayAction(recommendation: Recommendation): TodayAction {
+    switch (recommendation) {
+      case Recommendation.BUY:
+        return TodayAction.BUY;
+      case Recommendation.WATCH:
+        return TodayAction.WATCH;
+      case Recommendation.HOLD:
+        return TodayAction.HOLD;
+      case Recommendation.SELL:
+        return TodayAction.SELL;
+    }
   }
 
   private resolveMarketDirection(results: ScannerResult[]): MarketDirection {

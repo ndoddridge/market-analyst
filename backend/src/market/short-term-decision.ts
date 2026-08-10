@@ -4,11 +4,15 @@ import type { NewsItem } from '../news/types/news-item';
 import type { ScannerResult } from '../scanner/types/scanner-result';
 import { marketCalendarDaysBetween } from '../shared/market-clock';
 import {
+  hasMarketMovingLanguage,
   scoreShortTermNewsCatalyst,
   SHORT_TERM_NEWS_BOOST_MIN_SCORE,
 } from './short-term-catalyst';
 import {
   CatalystType,
+  SetupQuality,
+  TodayAction,
+  type DecisionEvidence,
   type MarketTodayCatalyst,
   type MarketTodayPick,
 } from './types/market-today';
@@ -24,17 +28,29 @@ export type ShortTermDecision = {
   topOpportunity: MarketTodayPick;
   topRisk: MarketTodayPick;
   catalyst: MarketTodayCatalyst | null;
+  decision: DecisionEvidence;
   reason: string;
   /** Internal actionability score for tests/debug (not API). */
   actionScore: number;
+};
+
+type CatalystPick = {
+  catalyst: MarketTodayCatalyst | null;
+  /** Ranking boost used by existing short-term selection. */
+  boost: number;
+  /** Explainability score 0–100; 0 means no usable catalyst. */
+  catalystScore: number;
+  note: string | null;
 };
 
 type RankedCandidate = {
   result: ScannerResult;
   actionScore: number;
   catalyst: MarketTodayCatalyst | null;
-  reason: string;
-  presentationRecommendation: Recommendation;
+  catalystScore: number;
+  catalystNote: string | null;
+  setupQuality: SetupQuality;
+  presentationRecommendation: TodayAction;
 };
 
 function eventDaysAhead(event: MarketEvent, now: Date): number | null {
@@ -45,11 +61,47 @@ function eventDaysAhead(event: MarketEvent, now: Date): number | null {
   return (ts - now.getTime()) / DAY_MS;
 }
 
+function eventCatalystScore(daysAhead: number, boost: number): number {
+  if (boost <= 0) {
+    return 0;
+  }
+  // Major company event inside 1–5 sessions → high.
+  if (daysAhead <= NEAR_TERM_MAX_DAYS) {
+    return Math.min(100, Math.round(82 + Math.max(0, 28 - daysAhead * 2)));
+  }
+  // Later near-term (6–14d) → moderate / lower.
+  return 48;
+}
+
+function newsCatalystScore(rawScore: number, title: string): number {
+  if (rawScore < SHORT_TERM_NEWS_BOOST_MIN_SCORE) {
+    return 0;
+  }
+
+  // Broad/indirect market language without a company-specific hook → low band.
+  if (hasMarketMovingLanguage(title) && rawScore < 90) {
+    return Math.min(45, Math.max(20, Math.round(rawScore * 0.35)));
+  }
+
+  // Major company-specific substance / direct impact → high.
+  if (rawScore >= 100) {
+    return Math.min(100, Math.round(78 + Math.min(22, (rawScore - 100) / 4)));
+  }
+
+  // Relevant but less consequential → moderate.
+  if (rawScore >= 55) {
+    return Math.min(72, Math.max(46, Math.round(40 + rawScore * 0.25)));
+  }
+
+  // Weakly related accepted news → low (ranking boost stays on existing formula).
+  return Math.min(35, Math.max(10, Math.round(rawScore * 0.4)));
+}
+
 function pickTickerEventCatalyst(
   events: readonly MarketEvent[],
   ticker: string,
   now: Date,
-): { catalyst: MarketTodayCatalyst | null; boost: number; note: string | null } {
+): CatalystPick {
   const tickerEvents = events.filter(
     (event) => event.ticker.toUpperCase() === ticker.toUpperCase(),
   );
@@ -111,7 +163,12 @@ function pickTickerEventCatalyst(
   }
 
   if (!best || best.boost <= 0) {
-    return { catalyst: null, boost: best?.boost ?? 0, note: best?.note ?? null };
+    return {
+      catalyst: null,
+      boost: best?.boost ?? 0,
+      catalystScore: 0,
+      note: best?.note ?? null,
+    };
   }
 
   return {
@@ -123,6 +180,7 @@ function pickTickerEventCatalyst(
       source: best.event.provider,
     },
     boost: best.boost,
+    catalystScore: eventCatalystScore(best.daysAhead, best.boost),
     note: best.note,
   };
 }
@@ -131,7 +189,7 @@ function pickTickerNewsCatalyst(
   news: readonly NewsItem[],
   ticker: string,
   now: Date,
-): { catalyst: MarketTodayCatalyst | null; boost: number; note: string | null } {
+): CatalystPick {
   const candidates = news
     .filter((item) => {
       const published = new Date(item.publishedAt);
@@ -156,9 +214,12 @@ function pickTickerNewsCatalyst(
     return {
       catalyst: null,
       boost: 0,
+      catalystScore: 0,
       note: null,
     };
   }
+
+  const catalystScore = newsCatalystScore(top.score, top.item.title);
 
   return {
     catalyst: {
@@ -168,7 +229,9 @@ function pickTickerNewsCatalyst(
       date: top.item.publishedAt,
       source: top.item.provider,
     },
+    // Keep prior ranking boost formula unchanged.
     boost: Math.min(18, 8 + top.score / 10),
+    catalystScore,
     note: `relevant recent catalyst (${top.item.title})`,
   };
 }
@@ -209,52 +272,92 @@ function momentumTrendBoost(result: ScannerResult): number {
   return result.score * 0.35 + result.confidence * 12;
 }
 
+export function resolveSetupQuality(
+  signalScore: number,
+  catalystScore: number,
+  actionScore: number,
+): SetupQuality {
+  if (
+    signalScore >= 75 &&
+    catalystScore >= 70 &&
+    actionScore >= SHORT_TERM_BUY_THRESHOLD
+  ) {
+    return SetupQuality.STRONG;
+  }
+
+  if (signalScore >= 55 || catalystScore >= 40) {
+    return SetupQuality.MODERATE;
+  }
+
+  return SetupQuality.WEAK;
+}
+
 function resolvePresentationRecommendation(
   result: ScannerResult,
   actionScore: number,
-): Recommendation {
+  setupQuality: SetupQuality,
+): TodayAction {
   if (result.recommendation === Recommendation.SELL) {
-    return Recommendation.SELL;
+    return TodayAction.SELL;
   }
 
-  // Keep BUY only when the combined short-term evidence clears the bar.
+  // BUY only when combined evidence supports a strong near-term setup.
   if (
     result.recommendation === Recommendation.BUY &&
+    setupQuality === SetupQuality.STRONG &&
     actionScore >= SHORT_TERM_BUY_THRESHOLD
   ) {
-    return Recommendation.BUY;
+    return TodayAction.BUY;
   }
 
-  // Not enough evidence for a forced BUY over the next 1–5 sessions.
-  if (
-    result.recommendation === Recommendation.BUY ||
-    result.recommendation === Recommendation.WATCH ||
-    result.recommendation === Recommendation.HOLD
-  ) {
-    return Recommendation.WATCH;
+  if (setupQuality === SetupQuality.WEAK) {
+    return TodayAction.WAIT;
   }
 
-  return result.recommendation;
+  // Interesting but conviction is insufficient for BUY.
+  return TodayAction.WATCH;
 }
 
-function buildReason(
-  result: ScannerResult,
-  presentationRecommendation: Recommendation,
-  catalystNote: string | null,
-  hasSupportiveCatalyst: boolean,
-): string {
-  if (catalystNote && hasSupportiveCatalyst) {
-    if (presentationRecommendation === Recommendation.BUY) {
-      return `${result.ticker} wins on near-term setup with ${catalystNote} and supportive scanner momentum (score ${result.score}).`;
-    }
-    return `${result.ticker} leads on near-term evidence with ${catalystNote}, but conviction stays WATCH/WAIT.`;
+function buildReason(options: {
+  ticker: string;
+  signalScore: number;
+  catalystScore: number;
+  setupQuality: SetupQuality;
+  action: TodayAction;
+  catalystNote: string | null;
+  riskTicker: string | null;
+}): string {
+  const {
+    ticker,
+    signalScore,
+    catalystScore,
+    setupQuality,
+    action,
+    catalystNote,
+    riskTicker,
+  } = options;
+
+  const riskBit = riskTicker
+    ? ` ${riskTicker} remains the weakest scanner score.`
+    : '';
+
+  if (action === TodayAction.BUY && catalystNote) {
+    return `${ticker} ranks first on a strong setup: scanner score ${signalScore} with catalyst strength ${catalystScore}/100 (${catalystNote}).${riskBit}`;
   }
 
-  if (presentationRecommendation === Recommendation.WATCH) {
-    return `${result.ticker} is the best available near-term candidate, but evidence is insufficient for BUY so the setup stays WATCH/WAIT.`;
+  if (catalystNote && catalystScore > 0) {
+    return `${ticker} leads with scanner score ${signalScore} and catalyst strength ${catalystScore}/100 (${catalystNote}), but conviction stays ${action}.${riskBit}`;
   }
 
-  return `${result.ticker} ranks highest on scanner momentum/trend for the next 1–5 sessions.`;
+  if (action === TodayAction.WAIT) {
+    return `${ticker} is the best available near-term name (scanner score ${signalScore}), but evidence is weak/unclear so the setup stays WAIT.${riskBit}`;
+  }
+
+  if (action === TodayAction.WATCH) {
+    return `${ticker} is interesting on scanner score ${signalScore} (${setupQuality.toLowerCase()} setup), but conviction is insufficient for BUY so it stays WATCH.${riskBit}`;
+  }
+
+  return `${ticker} ranks highest on scanner momentum/trend for the next 1–5 sessions (score ${signalScore}).${riskBit}`;
 }
 
 export function evaluateShortTermCandidate(
@@ -267,15 +370,17 @@ export function evaluateShortTermCandidate(
   const newsPick = pickTickerNewsCatalyst(news, result.ticker, now);
 
   // Prefer actionable upcoming events over news headlines.
-  const catalyst =
-    eventPick.boost > 0 && eventPick.catalyst
-      ? eventPick.catalyst
-      : newsPick.catalyst;
-  const catalystBoost =
-    eventPick.boost > 0 ? eventPick.boost : Math.max(0, newsPick.boost);
-  const catalystNote =
-    eventPick.boost > 0 ? eventPick.note : newsPick.note;
-  const hasSupportiveCatalyst = catalystBoost > 0 && catalyst != null;
+  const useEvent = eventPick.boost > 0 && eventPick.catalyst != null;
+  const catalyst = useEvent ? eventPick.catalyst : newsPick.catalyst;
+  const catalystBoost = useEvent
+    ? eventPick.boost
+    : Math.max(0, newsPick.boost);
+  const catalystScore = useEvent
+    ? eventPick.catalystScore
+    : newsPick.catalystScore;
+  const catalystNote = useEvent ? eventPick.note : newsPick.note;
+  const hasSupportiveCatalyst =
+    catalystBoost > 0 && catalyst != null && catalystScore > 0;
 
   // Passed-event penalty still applies even when no supportive catalyst remains.
   const penalty = eventPick.boost < 0 ? eventPick.boost : 0;
@@ -287,21 +392,26 @@ export function evaluateShortTermCandidate(
     catalystBoost +
     penalty;
 
+  const effectiveCatalystScore = hasSupportiveCatalyst ? catalystScore : 0;
+  const setupQuality = resolveSetupQuality(
+    result.score,
+    effectiveCatalystScore,
+    actionScore,
+  );
+
   const presentationRecommendation = resolvePresentationRecommendation(
     result,
     actionScore,
+    setupQuality,
   );
 
   return {
     result,
     actionScore,
     catalyst: hasSupportiveCatalyst ? catalyst : null,
-    reason: buildReason(
-      result,
-      presentationRecommendation,
-      catalystNote,
-      hasSupportiveCatalyst,
-    ),
+    catalystScore: effectiveCatalystScore,
+    catalystNote: hasSupportiveCatalyst ? catalystNote : null,
+    setupQuality,
     presentationRecommendation,
   };
 }
@@ -332,6 +442,25 @@ export function decideShortTermOpportunity(
 
   const winner = ranked[0];
   const risk = [...results].sort((a, b) => a.score - b.score)[0];
+  const riskTicker =
+    risk.ticker === winner.result.ticker ? null : risk.ticker;
+
+  const reason = buildReason({
+    ticker: winner.result.ticker,
+    signalScore: winner.result.score,
+    catalystScore: winner.catalystScore,
+    setupQuality: winner.setupQuality,
+    action: winner.presentationRecommendation,
+    catalystNote: winner.catalystNote,
+    riskTicker,
+  });
+
+  const decision: DecisionEvidence = {
+    signalScore: winner.result.score,
+    catalystScore: winner.catalystScore,
+    setupQuality: winner.setupQuality,
+    reason,
+  };
 
   return {
     topOpportunity: {
@@ -341,11 +470,25 @@ export function decideShortTermOpportunity(
     },
     topRisk: {
       ticker: risk.ticker,
-      recommendation: risk.recommendation,
+      recommendation: toTodayAction(risk.recommendation),
       score: risk.score,
     },
     catalyst: winner.catalyst,
-    reason: winner.reason,
+    decision,
+    reason,
     actionScore: winner.actionScore,
   };
+}
+
+function toTodayAction(recommendation: Recommendation): TodayAction {
+  switch (recommendation) {
+    case Recommendation.BUY:
+      return TodayAction.BUY;
+    case Recommendation.WATCH:
+      return TodayAction.WATCH;
+    case Recommendation.HOLD:
+      return TodayAction.HOLD;
+    case Recommendation.SELL:
+      return TodayAction.SELL;
+  }
 }
