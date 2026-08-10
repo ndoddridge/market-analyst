@@ -21,6 +21,8 @@ import {
   type MarketTodayResult,
 } from './types/market-today';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class MarketTodayService {
   constructor(
@@ -30,8 +32,7 @@ export class MarketTodayService {
   ) {}
 
   /**
-   * Concise "Today's Move" view built from the shared scanner pipeline.
-   * Reusable for SHORT_TERM / LONG_TERM (and later notifications).
+   * Concise "Today's Move" intelligence from the shared scanner + catalyst pipeline.
    */
   async getToday(
     profile: AnalysisProfile = DEFAULT_ANALYSIS_PROFILE,
@@ -44,10 +45,15 @@ export class MarketTodayService {
       );
     }
 
-    const topOpportunity = this.toPick(results[0]);
-    const topRisk = this.toPick(results[results.length - 1]);
-    const marketDirection = this.resolveMarketDirection(results);
-    const catalyst = await this.resolveCatalyst(topOpportunity, topRisk);
+    const ranked = this.rankForProfile(results, profile);
+    const topOpportunity = this.toPick(ranked[0]);
+    const topRisk = this.toPick(ranked[ranked.length - 1]);
+    const marketDirection = this.resolveMarketDirection(ranked);
+    const catalyst = await this.resolveCatalyst(
+      profile,
+      topOpportunity,
+      topRisk,
+    );
     const summary = this.buildSummary(
       profile,
       marketDirection,
@@ -65,6 +71,31 @@ export class MarketTodayService {
       summary,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Profile-aware ranking on top of scanner scores:
+   * SHORT_TERM favors nearer holding windows; LONG_TERM favors multi-month windows.
+   */
+  private rankForProfile(
+    results: ScannerResult[],
+    profile: AnalysisProfile,
+  ): ScannerResult[] {
+    return [...results].sort((a, b) => {
+      const scoreDiff = b.score - a.score;
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const aDays = a.suggestedHoldingWindow.maxDays;
+      const bDays = b.suggestedHoldingWindow.maxDays;
+
+      if (profile === AnalysisProfile.SHORT_TERM) {
+        return aDays - bDays;
+      }
+
+      return bDays - aDays;
+    });
   }
 
   private toPick(result: ScannerResult): MarketTodayPick {
@@ -96,13 +127,14 @@ export class MarketTodayService {
     if (bearish > bullish) {
       return MarketDirection.BEARISH;
     }
-    return MarketDirection.MIXED;
+    return MarketDirection.NEUTRAL;
   }
 
   private async resolveCatalyst(
+    profile: AnalysisProfile,
     topOpportunity: MarketTodayPick,
     topRisk: MarketTodayPick,
-  ): Promise<MarketTodayCatalyst> {
+  ): Promise<MarketTodayCatalyst | null> {
     const focusTickers = [
       ...new Set([
         topOpportunity.ticker,
@@ -118,6 +150,7 @@ export class MarketTodayService {
     ]);
 
     const eventCatalyst = this.pickEventCatalyst(
+      profile,
       events,
       topOpportunity.ticker,
       topRisk.ticker,
@@ -126,62 +159,83 @@ export class MarketTodayService {
       return eventCatalyst;
     }
 
-    const newsCatalyst = this.pickNewsCatalyst(
+    return this.pickNewsCatalyst(
+      profile,
       news,
       topOpportunity.ticker,
       topRisk.ticker,
     );
-    if (newsCatalyst) {
-      return newsCatalyst;
-    }
-
-    return {
-      type: CatalystType.NEWS,
-      headline: 'No material news or event catalyst identified for today.',
-      ticker: topOpportunity.ticker,
-      occurredAt: new Date().toISOString(),
-      source: 'system',
-    };
   }
 
   private pickEventCatalyst(
+    profile: AnalysisProfile,
     events: MarketEvent[],
     opportunityTicker: string,
     riskTicker: string,
   ): MarketTodayCatalyst | null {
-    if (events.length === 0) {
+    const now = Date.now();
+    const filtered = events.filter((event) => {
+      const ts = new Date(event.eventDate).getTime();
+      if (Number.isNaN(ts)) {
+        return false;
+      }
+
+      const daysAhead = (ts - now) / DAY_MS;
+
+      if (profile === AnalysisProfile.SHORT_TERM) {
+        // Next few trading days (~2 weeks calendar).
+        return daysAhead >= -1 && daysAhead <= 14;
+      }
+
+      // Multi-month opportunity window.
+      return daysAhead >= 30 && daysAhead <= 365;
+    });
+
+    if (filtered.length === 0) {
       return null;
     }
 
     const preferred =
-      events.find((event) => event.ticker === opportunityTicker) ??
-      events.find((event) => event.ticker === riskTicker) ??
-      events[0];
+      filtered.find((event) => event.ticker === opportunityTicker) ??
+      filtered.find((event) => event.ticker === riskTicker) ??
+      filtered[0];
 
     return {
       type: CatalystType.EVENT,
       headline: preferred.title,
       ticker: preferred.ticker,
-      occurredAt: preferred.eventDate,
+      date: preferred.eventDate,
       source: preferred.provider,
     };
   }
 
   private pickNewsCatalyst(
+    profile: AnalysisProfile,
     news: NewsItem[],
     opportunityTicker: string,
     riskTicker: string,
   ): MarketTodayCatalyst | null {
-    if (news.length === 0) {
+    const now = Date.now();
+    const maxAgeDays = profile === AnalysisProfile.SHORT_TERM ? 3 : 30;
+
+    const filtered = news.filter((item) => {
+      const ts = new Date(item.publishedAt).getTime();
+      if (Number.isNaN(ts)) {
+        return false;
+      }
+      return now - ts <= maxAgeDays * DAY_MS;
+    });
+
+    if (filtered.length === 0) {
       return null;
     }
 
     const preferred =
-      news.find((item) =>
+      filtered.find((item) =>
         item.relatedTickers.includes(opportunityTicker),
       ) ??
-      news.find((item) => item.relatedTickers.includes(riskTicker)) ??
-      news[0];
+      filtered.find((item) => item.relatedTickers.includes(riskTicker)) ??
+      filtered[0];
 
     return {
       type: CatalystType.NEWS,
@@ -192,7 +246,7 @@ export class MarketTodayService {
         ) ??
         preferred.relatedTickers[0] ??
         null,
-      occurredAt: preferred.publishedAt,
+      date: preferred.publishedAt,
       source: preferred.provider,
     };
   }
@@ -202,13 +256,21 @@ export class MarketTodayService {
     marketDirection: MarketDirection,
     topOpportunity: MarketTodayPick,
     topRisk: MarketTodayPick,
-    catalyst: MarketTodayCatalyst,
+    catalyst: MarketTodayCatalyst | null,
   ): string {
-    return (
-      `${profile} setup is ${marketDirection}: ` +
-      `${topOpportunity.ticker} leads opportunities while ` +
-      `${topRisk.ticker} is the weakest score. ` +
-      `Catalyst: ${catalyst.headline}`
-    );
+    const horizon =
+      profile === AnalysisProfile.SHORT_TERM
+        ? 'the next few trading days'
+        : 'multi-month opportunities';
+    const setup =
+      `${profile} setup is ${marketDirection} for ${horizon}: ` +
+      `${topOpportunity.ticker} (${topOpportunity.recommendation}, score ${topOpportunity.score}) ` +
+      `leads while ${topRisk.ticker} (${topRisk.recommendation}, score ${topRisk.score}) is the weakest.`;
+
+    if (!catalyst) {
+      return `${setup} No confirmed news or event catalyst is available.`;
+    }
+
+    return `${setup} Catalyst: ${catalyst.headline} (${catalyst.source}).`;
   }
 }

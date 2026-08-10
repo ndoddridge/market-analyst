@@ -8,7 +8,7 @@ import { Recommendation } from '../../analysis/types/analysis-result';
 export enum MarketDirection {
   BULLISH = 'BULLISH',
   BEARISH = 'BEARISH',
-  MIXED = 'MIXED',
+  NEUTRAL = 'NEUTRAL',
 }
 
 export enum CatalystType {
@@ -42,8 +42,11 @@ export class MarketTodayCatalyst {
   })
   ticker: string | null;
 
-  @ApiProperty({ example: '2026-08-09T22:20:00.000Z' })
-  occurredAt: string;
+  @ApiProperty({
+    description: 'Catalyst date (news publish time or event date).',
+    example: '2026-08-09T22:20:00.000Z',
+  })
+  date: string;
 
   @ApiProperty({ example: 'Yahoo Finance' })
   source: string;
@@ -65,12 +68,17 @@ export class MarketTodayResult {
   @ApiProperty({ type: MarketTodayPick })
   topRisk: MarketTodayPick;
 
-  @ApiProperty({ type: MarketTodayCatalyst })
-  catalyst: MarketTodayCatalyst;
+  @ApiPropertyOptional({
+    type: MarketTodayCatalyst,
+    nullable: true,
+    description:
+      'Real news/event catalyst when available; null when none can be identified.',
+  })
+  catalyst: MarketTodayCatalyst | null;
 
   @ApiProperty({
     example:
-      'SHORT_TERM setup is BULLISH: NVDA leads opportunities while AMD is the weakest score.',
+      'SHORT_TERM setup is BULLISH over the next few trading days: NVDA leads while AMD is the weakest score. Catalyst: NVIDIA demand stays strong (Yahoo Finance).',
   })
   summary: string;
 
