@@ -3,7 +3,10 @@ import type { MarketEvent } from '../events/types/market-event';
 import type { NewsItem } from '../news/types/news-item';
 import type { ScannerResult } from '../scanner/types/scanner-result';
 import { marketCalendarDaysBetween } from '../shared/market-clock';
-import { isNewsRelevantToTicker, scoreNewsCatalyst } from './catalyst-relevance';
+import {
+  scoreShortTermNewsCatalyst,
+  SHORT_TERM_NEWS_BOOST_MIN_SCORE,
+} from './short-term-catalyst';
 import {
   CatalystType,
   type MarketTodayCatalyst,
@@ -138,22 +141,21 @@ function pickTickerNewsCatalyst(
       if (marketCalendarDaysBetween(published, now) > SHORT_NEWS_MAX_AGE_DAYS) {
         return false;
       }
-      return isNewsRelevantToTicker(item, ticker);
+      return true;
     })
     .map((item) => ({
       item,
-      score: scoreNewsCatalyst(item, ticker, now),
+      score: scoreShortTermNewsCatalyst(item, ticker, now),
     }))
-    .filter((entry) => entry.score >= 0)
+    // Only meaningful 1–5 day catalysts; weak/any recent news must not boost.
+    .filter((entry) => entry.score >= SHORT_TERM_NEWS_BOOST_MIN_SCORE)
     .sort((a, b) => b.score - a.score);
 
   const top = candidates[0];
   if (!top) {
-    // Explicitly ignore irrelevant headlines so they cannot improve ranking.
-    const hadIrrelevant = news.some((item) => item.querySymbol === ticker);
     return {
       catalyst: null,
-      boost: hadIrrelevant ? 0 : 0,
+      boost: 0,
       note: null,
     };
   }

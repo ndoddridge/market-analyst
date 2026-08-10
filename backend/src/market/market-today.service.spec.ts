@@ -174,6 +174,31 @@ describe('MarketTodayService', () => {
     expect(result.reason).toMatch(/WATCH\/WAIT/i);
   });
 
+  it('rejects a VFIAX-style fund fee/comparison story as an SPY SHORT_TERM catalyst', async () => {
+    scannerService.scan.mockResolvedValue(spyOpportunityFixture());
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'vfiax',
+        title:
+          'Forget VFIAX: Vanguard Sells You the Same S&P 500 Fund Without the $3,000 Toll, or the $75 Fee Fidelity Charges to Buy It',
+        source: 'Yahoo Finance',
+        url: null,
+        publishedAt: '2026-08-09T16:04:46.000Z',
+        relatedTickers: ['SPY', 'VFIAX'],
+        querySymbol: 'SPY',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.topOpportunity.ticker).toBe('SPY');
+    expect(result.catalyst).toBeNull();
+    expect(result.summary).toContain(
+      'No confirmed news or event catalyst is available',
+    );
+  });
+
   it('accepts a broad-market catalyst for SPY when materially relevant', async () => {
     scannerService.scan.mockResolvedValue(spyOpportunityFixture());
     newsService.getRecentNews.mockResolvedValue([
