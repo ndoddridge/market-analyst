@@ -11,6 +11,7 @@ import { EventsModule } from './events/events.module';
 import { RecommendationsModule } from './recommendations/recommendations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SharedModule } from './shared/shared.module';
+import { TodayModule } from './today/today.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SharedModule } from './shared/shared.module';
     RecommendationsModule,
     NotificationsModule,
     SharedModule,
+    TodayModule,
   ],
   providers: [ConfigService],
   exports: [ConfigService],

@@ -20,6 +20,8 @@ describe('MarketTodayService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-09T12:00:00.000Z'));
     service = new MarketTodayService(
       scannerService as never,
       newsService as never,
@@ -27,6 +29,10 @@ describe('MarketTodayService', () => {
     );
     newsService.getRecentNews.mockResolvedValue([]);
     eventsService.getUpcomingEvents.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('builds today summary from ranked scanner results and includes catalyst', async () => {
@@ -68,7 +74,7 @@ describe('MarketTodayService', () => {
         title: 'NVIDIA demand stays strong',
         source: 'Wire',
         url: null,
-        publishedAt: '2026-08-09T12:00:00.000Z',
+        publishedAt: '2026-08-09T10:00:00.000Z',
         relatedTickers: ['NVDA'],
         provider: 'Yahoo Finance',
       },
@@ -95,14 +101,15 @@ describe('MarketTodayService', () => {
       type: CatalystType.NEWS,
       headline: 'NVIDIA demand stays strong',
       ticker: 'NVDA',
-      occurredAt: '2026-08-09T12:00:00.000Z',
+      date: '2026-08-09T10:00:00.000Z',
       source: 'Yahoo Finance',
     });
+    expect(result.summary).toContain('next few trading days');
     expect(result.summary).toContain('Catalyst: NVIDIA demand stays strong');
     expect(result.generatedAt).toEqual(expect.any(String));
   });
 
-  it('prefers an upcoming event catalyst over news', async () => {
+  it('prefers a multi-month event catalyst for LONG_TERM and uses NEUTRAL when tied', async () => {
     scannerService.scan.mockResolvedValue([
       {
         ticker: 'AAPL',
@@ -127,6 +134,14 @@ describe('MarketTodayService', () => {
     ]);
     eventsService.getUpcomingEvents.mockResolvedValue([
       {
+        id: 'near',
+        title: 'AAPL ex-dividend',
+        type: MarketEventType.DIVIDEND,
+        ticker: 'AAPL',
+        eventDate: '2026-08-12T00:00:00.000Z',
+        provider: 'Yahoo Finance',
+      },
+      {
         id: 'e1',
         title: 'AAPL earnings',
         type: MarketEventType.EARNINGS,
@@ -141,7 +156,7 @@ describe('MarketTodayService', () => {
         title: 'Some news',
         source: 'Wire',
         url: null,
-        publishedAt: '2026-08-09T12:00:00.000Z',
+        publishedAt: '2026-08-09T10:00:00.000Z',
         relatedTickers: ['AAPL'],
         provider: 'Yahoo Finance',
       },
@@ -149,9 +164,55 @@ describe('MarketTodayService', () => {
 
     const result = await service.getToday(AnalysisProfile.LONG_TERM);
 
-    expect(result.catalyst.type).toBe(CatalystType.EVENT);
-    expect(result.catalyst.headline).toBe('AAPL earnings');
-    expect(result.marketDirection).toBe(MarketDirection.MIXED);
+    expect(result.catalyst?.type).toBe(CatalystType.EVENT);
+    expect(result.catalyst?.headline).toBe('AAPL earnings');
+    expect(result.catalyst?.date).toBe('2026-10-29T20:00:00.000Z');
+    expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
+    expect(result.summary).toContain('multi-month opportunities');
+  });
+
+  it('returns null catalyst and states unavailability when none fit the profile horizon', async () => {
+    scannerService.scan.mockResolvedValue([
+      {
+        ticker: 'SPY',
+        companyName: 'SPDR',
+        profile: AnalysisProfile.SHORT_TERM,
+        recommendation: Recommendation.HOLD,
+        score: 50,
+        confidence: 0.6,
+        suggestedHoldingWindow: { minDays: 1, maxDays: 5 },
+        recommendedAction: 'Maintain current position.',
+      },
+    ]);
+    eventsService.getUpcomingEvents.mockResolvedValue([
+      {
+        id: 'far',
+        title: 'SPY earnings',
+        type: MarketEventType.EARNINGS,
+        ticker: 'SPY',
+        eventDate: '2026-11-01T00:00:00.000Z',
+        provider: 'Yahoo Finance',
+      },
+    ]);
+    newsService.getRecentNews.mockResolvedValue([
+      {
+        id: 'old',
+        title: 'Old headline',
+        source: 'Wire',
+        url: null,
+        publishedAt: '2026-07-01T00:00:00.000Z',
+        relatedTickers: ['SPY'],
+        provider: 'Yahoo Finance',
+      },
+    ]);
+
+    const result = await service.getToday(AnalysisProfile.SHORT_TERM);
+
+    expect(result.catalyst).toBeNull();
+    expect(result.summary).toContain(
+      'No confirmed news or event catalyst is available',
+    );
+    expect(result.marketDirection).toBe(MarketDirection.NEUTRAL);
   });
 
   it('throws when scanner returns no results', async () => {
