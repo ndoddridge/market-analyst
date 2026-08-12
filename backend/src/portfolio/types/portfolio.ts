@@ -5,6 +5,7 @@ import {
   TodayAction,
   type MarketTodayCatalyst,
 } from '../../market/types/market-today';
+import { EstimatedOpen } from '../../market/types/estimated-open';
 
 export enum PositionMove {
   ADD = 'ADD',
@@ -26,10 +27,6 @@ export class PortfolioPositionInput {
 
   @ApiProperty({ example: 313.33 })
   currentPrice: number;
-  estimatedOpenPrice?: number | null;
-  estimatedOpenChangePercent?: number | null;
-  suggestedSellPrice?: number | null;
-  openEstimateAvailable?: boolean;
 }
 
 export class AnalyzePortfolioRequest {
@@ -85,6 +82,14 @@ export class PositionAnalysisCard {
       'Scanner evidence remains bullish, but catalyst strength and setup quality do not justify adding at this time.',
   })
   reason: string;
+
+  @ApiPropertyOptional({
+    type: EstimatedOpen,
+    nullable: true,
+    description:
+      'Next-session open range estimate, only present when sufficient extended-hours data exists.',
+  })
+  estimatedOpen: EstimatedOpen | null;
 }
 
 export class PortfolioActionSummaryItem {
@@ -122,8 +127,15 @@ export class PortfolioBuyCandidate {
   @ApiProperty()
   ticker: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Null when a live quote could not be fetched — never fabricated as 0.',
+  })
+  currentPrice: number | null;
+
   @ApiProperty()
-  currentPrice: number;
+  priceUnavailable: boolean;
 
   @ApiProperty()
   signalScore: number;
@@ -133,6 +145,9 @@ export class PortfolioBuyCandidate {
 
   @ApiProperty({ enum: SetupQuality })
   setupQuality: SetupQuality;
+
+  @ApiPropertyOptional({ nullable: true, type: Object })
+  catalyst: MarketTodayCatalyst | null;
 
   @ApiProperty()
   reason: string;
@@ -147,6 +162,9 @@ export class PortfolioAnalysisResult {
 
   @ApiProperty({ type: [PortfolioBuyCandidate] })
   buyCandidates: PortfolioBuyCandidate[];
+
+  @ApiPropertyOptional({ nullable: true })
+  buyCandidatesNote: string | null;
 
   @ApiProperty()
   generatedAt: string;

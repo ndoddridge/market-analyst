@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: market-analyst
+    runtime: node
+    plan: starter
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /
+    disk:
+      name: portfolio-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORTFOLIO_DATA_DIR
+        value: /var/data
+      - key: ANALYSIS_REFRESH_INTERVAL_MS
+        value: "300000"
+      - key: FINNHUB_API_KEY
+        sync: false

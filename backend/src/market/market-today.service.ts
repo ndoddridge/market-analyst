@@ -11,28 +11,24 @@ import {
 } from '../analysis/types/analysis-profile';
 import { Recommendation } from '../analysis/types/analysis-result';
 import { EventsService } from '../events/events.service';
-import type { MarketEvent } from '../events/types/market-event';
 import { NewsService } from '../news/news.service';
-import type { NewsItem } from '../news/types/news-item';
 import { PredictionService } from '../prediction/prediction.service';
 import { ScannerService } from '../scanner/scanner.service';
 import type { ScannerResult } from '../scanner/types/scanner-result';
+import { toMarketIsoString } from '../shared/market-clock';
 import {
-  marketCalendarDaysBetween,
-  toMarketIsoString,
-} from '../shared/market-clock';
-import { scoreNewsCatalyst } from './catalyst-relevance';
+  pickEventCatalyst,
+  pickNewsCatalyst,
+  rankForLongTerm,
+  recommendationToTodayAction,
+} from './long-term-decision';
 import { decideShortTermOpportunity } from './short-term-decision';
 import {
-  CatalystType,
   MarketDirection,
-  TodayAction,
   type MarketTodayCatalyst,
   type MarketTodayPick,
   type MarketTodayResult,
 } from './types/market-today';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class MarketTodayService {
@@ -132,7 +128,7 @@ export class MarketTodayService {
     results: ScannerResult[],
     now: Date,
   ): Promise<MarketTodayResult> {
-    const ranked = this.rankForLongTerm(results);
+    const ranked = rankForLongTerm(results);
     const topOpportunity = this.toPick(ranked[0]);
     const topRisk = this.toPick(ranked[ranked.length - 1]);
     const marketDirection = this.resolveMarketDirection(ranked);
@@ -164,38 +160,12 @@ export class MarketTodayService {
     };
   }
 
-  private rankForLongTerm(results: ScannerResult[]): ScannerResult[] {
-    return [...results].sort((a, b) => {
-      const scoreDiff = b.score - a.score;
-      if (scoreDiff !== 0) {
-        return scoreDiff;
-      }
-
-      return (
-        b.suggestedHoldingWindow.maxDays - a.suggestedHoldingWindow.maxDays
-      );
-    });
-  }
-
   private toPick(result: ScannerResult): MarketTodayPick {
     return {
       ticker: result.ticker,
-      recommendation: this.toTodayAction(result.recommendation),
+      recommendation: recommendationToTodayAction(result.recommendation),
       score: result.score,
     };
-  }
-
-  private toTodayAction(recommendation: Recommendation): TodayAction {
-    switch (recommendation) {
-      case Recommendation.BUY:
-        return TodayAction.BUY;
-      case Recommendation.WATCH:
-        return TodayAction.WATCH;
-      case Recommendation.HOLD:
-        return TodayAction.HOLD;
-      case Recommendation.SELL:
-        return TodayAction.SELL;
-    }
   }
 
   private resolveMarketDirection(results: ScannerResult[]): MarketDirection {
@@ -228,12 +198,7 @@ export class MarketTodayService {
     now: Date,
   ): Promise<MarketTodayCatalyst | null> {
     const focusTickers = [
-      ...new Set([
-        topOpportunity.ticker,
-        topRisk.ticker,
-        'SPY',
-        'QQQ',
-      ]),
+      ...new Set([topOpportunity.ticker, topRisk.ticker, 'SPY', 'QQQ']),
     ];
 
     const [events, news] = await Promise.all([
@@ -241,7 +206,7 @@ export class MarketTodayService {
       this.newsService.getRecentNews(focusTickers),
     ]);
 
-    const eventCatalyst = this.pickEventCatalyst(
+    const eventCatalyst = pickEventCatalyst(
       AnalysisProfile.LONG_TERM,
       events,
       topOpportunity.ticker,
@@ -251,86 +216,12 @@ export class MarketTodayService {
       return eventCatalyst;
     }
 
-    return this.pickNewsCatalyst(
+    return pickNewsCatalyst(
       AnalysisProfile.LONG_TERM,
       news,
       topOpportunity.ticker,
       now,
     );
-  }
-
-  private pickEventCatalyst(
-    profile: AnalysisProfile,
-    events: MarketEvent[],
-    opportunityTicker: string,
-    now: Date,
-  ): MarketTodayCatalyst | null {
-    const filtered = events.filter((event) => {
-      const ts = new Date(event.eventDate).getTime();
-      if (Number.isNaN(ts)) {
-        return false;
-      }
-
-      const daysAhead = (ts - now.getTime()) / DAY_MS;
-
-      if (profile === AnalysisProfile.SHORT_TERM) {
-        return daysAhead >= -1 && daysAhead <= 14;
-      }
-
-      return daysAhead >= 30 && daysAhead <= 365;
-    });
-
-    const preferred =
-      filtered.find((event) => event.ticker === opportunityTicker) ?? null;
-
-    if (!preferred) {
-      return null;
-    }
-
-    return {
-      type: CatalystType.EVENT,
-      headline: preferred.title,
-      ticker: preferred.ticker,
-      date: preferred.eventDate,
-      source: preferred.provider,
-    };
-  }
-
-  private pickNewsCatalyst(
-    profile: AnalysisProfile,
-    news: NewsItem[],
-    opportunityTicker: string,
-    now: Date,
-  ): MarketTodayCatalyst | null {
-    const maxAgeDays = profile === AnalysisProfile.SHORT_TERM ? 3 : 30;
-
-    const candidates = news
-      .filter((item) => {
-        const published = new Date(item.publishedAt);
-        if (Number.isNaN(published.getTime())) {
-          return false;
-        }
-        return marketCalendarDaysBetween(published, now) <= maxAgeDays;
-      })
-      .map((item) => ({
-        item,
-        score: scoreNewsCatalyst(item, opportunityTicker, now),
-      }))
-      .filter((entry) => entry.score >= 0)
-      .sort((a, b) => b.score - a.score);
-
-    const preferred = candidates[0]?.item;
-    if (!preferred) {
-      return null;
-    }
-
-    return {
-      type: CatalystType.NEWS,
-      headline: preferred.title,
-      ticker: opportunityTicker,
-      date: preferred.publishedAt,
-      source: preferred.provider,
-    };
   }
 
   private buildSummary(

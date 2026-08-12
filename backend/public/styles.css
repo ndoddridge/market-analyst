@@ -620,6 +620,220 @@ body {
   }
 }
 
+.status-bar {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  animation: rise 480ms ease both;
+}
+
+.market-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink-soft);
+}
+
+.market-pill[data-state="live"] {
+  color: var(--sea-deep);
+  border-color: rgba(15, 110, 106, 0.35);
+  background: rgba(15, 110, 106, 0.12);
+}
+
+.market-pill[data-state="closed"] {
+  color: var(--ink-soft);
+}
+
+.market-pill[data-state="offline"] {
+  color: var(--risk);
+  border-color: rgba(139, 58, 58, 0.35);
+  background: rgba(139, 58, 58, 0.1);
+}
+
+.updated-ago {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.empty-state {
+  margin-top: 1.35rem;
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  animation: rise 480ms ease both;
+}
+
+.empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.empty-body {
+  margin: 0.5rem 0 1rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.empty-state .primary-btn {
+  display: inline-block;
+  width: auto;
+  text-decoration: none;
+  margin-top: 0;
+}
+
+.empty-hint {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.todays-move {
+  margin-top: 1.35rem;
+  padding: 1.25rem 1.15rem 1.15rem;
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    linear-gradient(160deg, rgba(15, 110, 106, 0.14), transparent 55%),
+    rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  animation: rise 560ms ease both;
+}
+
+.move-headline {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 9vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.move-headline[data-action="SELL"],
+.move-headline[data-action="REDUCE"] {
+  color: var(--risk);
+}
+
+.move-headline[data-action="BUY"],
+.move-headline[data-action="ADD"] {
+  color: var(--sea-deep);
+}
+
+.move-meta {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.move-reason {
+  margin: 0.85rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.positions-section,
+.buy-section {
+  margin-top: 1.35rem;
+  animation: rise 620ms ease both;
+}
+
+.buy-note {
+  margin: 0.4rem 0 0.75rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.position-cards,
+.buy-cards {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.buy-card {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
+  border-left: 3px solid var(--sea);
+}
+
+.buy-card[data-rec="WATCH"] {
+  border-left-color: #6a5a2e;
+}
+
+.buy-empty {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.estimate {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.6rem;
+}
+
+.estimate summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--sea-deep);
+}
+
+.estimate summary::-webkit-details-marker {
+  display: none;
+}
+
+.estimate-body {
+  margin-top: 0.5rem;
+}
+
+.estimate-range {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.estimate-meta {
+  margin: 0.25rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.estimate-disclaimer,
+.estimate-empty {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.staleness {
+  color: var(--risk) !important;
+}
+
+.upload-meta {
+  margin: 0.85rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
 @media (min-width: 720px) {
   .shell {
     padding-top: 2rem;

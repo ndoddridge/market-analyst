@@ -1,14 +1,22 @@
-import { Module } from '@nestjs/common';
-import { EventsModule } from '../events/events.module';
-import { NewsModule } from '../news/news.module';
-import { ScannerModule } from '../scanner/scanner.module';
+import { Module, forwardRef } from '@nestjs/common';
+import { ConfigService } from '../config/config.service';
+import { DashboardModule } from '../dashboard/dashboard.module';
+import { FilePortfolioRepository } from './file-portfolio.repository';
 import { PortfolioController } from './portfolio.controller';
+import { PortfolioRepository } from './portfolio.repository';
 import { PortfolioService } from './portfolio.service';
 
 @Module({
-  imports: [ScannerModule, NewsModule, EventsModule],
+  imports: [forwardRef(() => DashboardModule)],
   controllers: [PortfolioController],
-  providers: [PortfolioService],
-  exports: [PortfolioService],
+  providers: [
+    PortfolioService,
+    ConfigService,
+    {
+      provide: PortfolioRepository,
+      useClass: FilePortfolioRepository,
+    },
+  ],
+  exports: [PortfolioService, PortfolioRepository],
 })
 export class PortfolioModule {}

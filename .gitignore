@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Stray root lockfile (no root package.json — this project is backend/-only)
+/package-lock.json
+
 # Environment
 .env
 .env.*
@@ -8,6 +11,9 @@ node_modules/
 
 # Local mobile tunnel helper output
 backend/.mobile-url
+
+# Local persisted portfolio store (server-side, per-environment)
+backend/data/
 
 # Build output
 dist/

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MarketDataProvider } from './market-data.provider';
+import type { ExtendedQuote } from './types/extended-quote';
 import type { MarketQuote } from './types/market-quote';
 
 @Injectable()
@@ -12,5 +13,9 @@ export class MarketService {
 
   getQuote(symbol: string): Promise<MarketQuote> {
     return this.marketDataProvider.getQuote(symbol);
+  }
+
+  getExtendedQuote(symbol: string): Promise<ExtendedQuote> {
+    return this.marketDataProvider.getExtendedQuote(symbol);
   }
 }

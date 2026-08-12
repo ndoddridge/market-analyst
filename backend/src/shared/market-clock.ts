@@ -5,7 +5,7 @@
  */
 export const MARKET_TIME_ZONE = 'America/New_York';
 
-type DateParts = {
+export type DateParts = {
   year: string;
   month: string;
   day: string;
@@ -39,7 +39,7 @@ function getZonedParts(date: Date, timeZone: string): DateParts {
   };
 }
 
-function getTimeZoneOffsetIso(date: Date, timeZone: string): string {
+export function getTimeZoneOffsetIso(date: Date, timeZone: string): string {
   const tzName = new Intl.DateTimeFormat('en-US', {
     timeZone,
     timeZoneName: 'longOffset',
@@ -65,6 +65,11 @@ function getTimeZoneOffsetIso(date: Date, timeZone: string): string {
   const hours = match[2].padStart(2, '0');
   const minutes = (match[3] ?? '00').padStart(2, '0');
   return `${sign}${hours}:${minutes}`;
+}
+
+/** NY-local date/time parts (hour is 0-23, no timezone math left to the caller). */
+export function getMarketTimeParts(date: Date = new Date()): DateParts {
+  return getZonedParts(date, MARKET_TIME_ZONE);
 }
 
 /** Calendar date (YYYY-MM-DD) in the market timezone. */

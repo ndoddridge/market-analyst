@@ -1,16 +1,43 @@
 import { AnalysisProfile } from '../analysis/types/analysis-profile';
 import { Recommendation } from '../analysis/types/analysis-result';
+import type { LongTermCandidate } from '../market/long-term-decision';
 import type { RankedCandidate } from '../market/short-term-decision';
 import { SetupQuality, TodayAction } from '../market/types/market-today';
-import {
-  createManualPosition,
-  parsePortfolioCsv,
-} from './portfolio-csv';
+import { createManualPosition, parsePortfolioCsv } from './portfolio-csv';
 import {
   calculateUnrealizedPlPercent,
+  resolveLongTermPositionMove,
   resolvePositionMove,
 } from './position-move';
 import { PositionMove } from './types/portfolio';
+
+function longTermCandidate(
+  overrides: Partial<{
+    recommendation: TodayAction;
+    setupQuality: SetupQuality;
+    score: number;
+    ticker: string;
+  }> = {},
+): Pick<
+  LongTermCandidate,
+  'presentationRecommendation' | 'setupQuality' | 'result'
+> {
+  const ticker = overrides.ticker ?? 'AAPL';
+  return {
+    presentationRecommendation: overrides.recommendation ?? TodayAction.WATCH,
+    setupQuality: overrides.setupQuality ?? SetupQuality.MODERATE,
+    result: {
+      ticker,
+      companyName: ticker,
+      profile: AnalysisProfile.LONG_TERM,
+      recommendation: Recommendation.WATCH,
+      score: overrides.score ?? 70,
+      confidence: 0.6,
+      suggestedHoldingWindow: { minDays: 180, maxDays: 730 },
+      recommendedAction: 'Wait',
+    },
+  };
+}
 
 function candidate(
   overrides: Partial<{
@@ -198,5 +225,62 @@ BAD,0,1,1
     const result = parsePortfolioCsv(csv);
     expect(result.positions[0].ticker).toBe('AAPL');
     expect(result.errors.some((error) => error.line === 5)).toBe(true);
+  });
+});
+
+describe('LONG_TERM position move', () => {
+  it('recommends ADD only for a strong LONG_TERM BUY setup', () => {
+    const decision = resolveLongTermPositionMove(
+      longTermCandidate({
+        recommendation: TodayAction.BUY,
+        setupQuality: SetupQuality.STRONG,
+        score: 80,
+      }),
+    );
+    expect(decision.move).toBe(PositionMove.ADD);
+  });
+
+  it('does not ADD on a BUY recommendation without a strong setup', () => {
+    const decision = resolveLongTermPositionMove(
+      longTermCandidate({
+        recommendation: TodayAction.BUY,
+        setupQuality: SetupQuality.MODERATE,
+        score: 90,
+      }),
+    );
+    expect(decision.move).toBe(PositionMove.HOLD);
+  });
+
+  it('sells or reduces on explicit LONG_TERM SELL evidence', () => {
+    expect(
+      resolveLongTermPositionMove(
+        longTermCandidate({ recommendation: TodayAction.SELL, score: 20 }),
+      ).move,
+    ).toBe(PositionMove.SELL);
+
+    expect(
+      resolveLongTermPositionMove(
+        longTermCandidate({ recommendation: TodayAction.SELL, score: 42 }),
+      ).move,
+    ).toBe(PositionMove.REDUCE);
+  });
+
+  it('reduces on weak, low-score WATCH evidence rather than inventing conviction', () => {
+    const decision = resolveLongTermPositionMove(
+      longTermCandidate({
+        recommendation: TodayAction.WATCH,
+        setupQuality: SetupQuality.WEAK,
+        score: 30,
+      }),
+    );
+    expect(decision.move).toBe(PositionMove.REDUCE);
+  });
+
+  it('holds on moderate WATCH/HOLD evidence', () => {
+    expect(
+      resolveLongTermPositionMove(
+        longTermCandidate({ recommendation: TodayAction.WATCH, score: 60 }),
+      ).move,
+    ).toBe(PositionMove.HOLD);
   });
 });

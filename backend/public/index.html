@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <meta name="theme-color" content="#0f1c24" />
-    <title>Market Analyst — Today’s Move</title>
+    <title>Market Analyst — Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,16 +21,21 @@
     <main class="shell">
       <header class="brand-bar">
         <p class="brand">Market Analyst</p>
-        <p class="brand-sub">Today’s Move</p>
+        <p class="brand-sub">Live Dashboard</p>
       </header>
 
       <nav class="app-nav" aria-label="Primary">
-        <a class="app-nav-link is-active" href="/">Today</a>
+        <a class="app-nav-link is-active" href="/">Dashboard</a>
         <a class="app-nav-link" href="/positions">My Positions</a>
       </nav>
 
-      <section class="profile-panel" aria-label="Analysis profile">
-        <div class="profile-switch" role="tablist" aria-label="Profile">
+      <section class="status-bar" aria-live="polite">
+        <span id="market-pill" class="market-pill" data-state="unknown">—</span>
+        <span id="updated-ago" class="updated-ago"></span>
+      </section>
+
+      <section class="profile-panel" aria-label="Analysis horizon">
+        <div class="profile-switch" role="tablist" aria-label="Horizon">
           <button
             type="button"
             class="profile-btn is-active"
@@ -54,48 +59,50 @@
 
       <section id="status" class="status" aria-live="polite" hidden></section>
 
-      <section id="dashboard" class="dashboard" hidden>
-        <section class="move">
-          <p class="move-label">Market direction</p>
-          <h1 id="direction" class="direction">—</h1>
-          <p id="horizon" class="horizon"></p>
-
-          <div class="picks">
-            <article class="pick pick-opportunity">
-              <p class="pick-label">Top opportunity</p>
-              <p id="opp-ticker" class="pick-ticker">—</p>
-              <p class="pick-meta">
-                <span id="opp-rec">—</span>
-                <span id="opp-score" class="score">—</span>
-              </p>
-              <p id="setup-quality" class="setup-quality" hidden></p>
-              <p id="decision-reason" class="decision-reason" hidden></p>
-            </article>
-            <article class="pick pick-risk">
-              <p class="pick-label">Top risk</p>
-              <p id="risk-ticker" class="pick-ticker">—</p>
-              <p class="pick-meta">
-                <span id="risk-rec">—</span>
-                <span id="risk-score" class="score">—</span>
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section class="catalyst" aria-label="Catalyst">
-          <p class="catalyst-label">Catalyst</p>
-          <div id="catalyst-body" class="catalyst-body"></div>
-        </section>
-
-        <details class="why">
-          <summary>Why?</summary>
-          <div class="why-body">
-            <p id="reason"></p>
-            <p id="summary"></p>
-            <p id="generated" class="generated"></p>
-          </div>
-        </details>
+      <section id="empty-state" class="empty-state" hidden>
+        <p class="empty-title">No portfolio uploaded yet</p>
+        <p class="empty-body">
+          Upload your Chase CSV to see personalized Sell/Hold decisions and
+          portfolio P/L. Buy opportunities below don't require a portfolio.
+        </p>
+        <a class="primary-btn" href="/positions">Upload portfolio →</a>
       </section>
+
+      <section id="todays-move" class="todays-move" hidden>
+        <p class="move-label">Today's Move</p>
+        <h1 id="move-headline" class="move-headline">—</h1>
+        <div class="move-meta">
+          <div>
+            <p class="summary-kicker">Current price</p>
+            <p id="move-price" class="summary-value">—</p>
+          </div>
+          <div>
+            <p class="summary-kicker">Confidence</p>
+            <p id="move-confidence" class="summary-value">—</p>
+          </div>
+        </div>
+        <p id="move-reason" class="move-reason"></p>
+      </section>
+
+      <section id="positions-section" class="positions-section" hidden>
+        <p class="section-label">Your Positions</p>
+        <section id="portfolio-summary" class="portfolio-summary" hidden></section>
+        <section id="position-cards" class="position-cards"></section>
+      </section>
+
+      <section id="buy-section" class="buy-section">
+        <p class="section-label">Buy Opportunities</p>
+        <p id="buy-note" class="buy-note" hidden></p>
+        <section id="buy-cards" class="buy-cards"></section>
+      </section>
+
+      <details class="why">
+        <summary>Details</summary>
+        <div class="why-body">
+          <p id="generated" class="generated"></p>
+          <p id="staleness" class="staleness" hidden></p>
+        </div>
+      </details>
     </main>
     <script src="/app.js" defer></script>
   </body>

@@ -7,12 +7,21 @@ import {
 import axios, { AxiosError } from 'axios';
 import YahooFinance from 'yahoo-finance2';
 import { ConfigService } from '../config/config.service';
+import type { ExtendedQuote } from './types/extended-quote';
 import type { MarketQuote } from './types/market-quote';
 
 type FinnhubQuoteResponse = {
   c: number;
   t: number;
 };
+
+function toNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
 
 @Injectable()
 export class MarketDataProvider {
@@ -97,6 +106,32 @@ export class MarketDataProvider {
 
       throw new BadGatewayException(
         `Failed to fetch quote for symbol: ${symbol}`,
+      );
+    }
+  }
+
+  /**
+   * Extended-hours quote for next-open estimation. Always sourced from Yahoo
+   * Finance (pre/post-market fields), independent of the primary quote
+   * provider, and requires no API key.
+   */
+  async getExtendedQuote(symbol: string): Promise<ExtendedQuote> {
+    try {
+      const quote = await this.yahooFinance.quote(symbol);
+      return {
+        symbol,
+        regularMarketPreviousClose: toNumberOrNull(
+          quote.regularMarketPreviousClose,
+        ),
+        preMarketPrice: toNumberOrNull(quote.preMarketPrice),
+        postMarketPrice: toNumberOrNull(quote.postMarketPrice),
+        regularMarketDayHigh: toNumberOrNull(quote.regularMarketDayHigh),
+        regularMarketDayLow: toNumberOrNull(quote.regularMarketDayLow),
+        marketState: toStringOrNull(quote.marketState),
+      };
+    } catch {
+      throw new BadGatewayException(
+        `Failed to fetch extended quote for symbol: ${symbol}`,
       );
     }
   }

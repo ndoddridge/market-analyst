@@ -25,15 +25,16 @@
       </header>
 
       <nav class="app-nav" aria-label="Primary">
-        <a class="app-nav-link" href="/">Today</a>
+        <a class="app-nav-link" href="/">Dashboard</a>
         <a class="app-nav-link is-active" href="/positions">My Positions</a>
       </nav>
 
       <section class="positions-intro">
         <p>
-          Upload a CSV or add positions manually. We’ll map each holding to the
-          existing SHORT_TERM scanner evidence and recommend ADD, HOLD, REDUCE,
-          SELL, or WATCH.
+          Upload a CSV or add positions manually. Uploading a CSV
+          <strong>replaces your entire portfolio</strong>. Your portfolio is
+          saved on the server and persists across restarts. See personalized
+          recommendations on the <a href="/">Dashboard</a>.
         </p>
       </section>
 
@@ -46,12 +47,13 @@
           Add Position
         </button>
         <button type="button" class="ghost-btn" id="clear-positions" hidden>
-          Clear
+          Clear All
         </button>
       </section>
 
       <p class="csv-hint">
-        CSV columns: <code>ticker,shares,avgCost,currentPrice</code>
+        CSV columns: <code>ticker,shares,avgCost,currentPrice</code> (Chase
+        exports are supported automatically)
       </p>
 
       <form id="manual-form" class="manual-form" hidden>
@@ -78,14 +80,9 @@
 
       <section id="positions-status" class="status" aria-live="polite" hidden></section>
 
-      <section id="portfolio-summary" class="portfolio-summary" hidden></section>
+      <p id="upload-meta" class="upload-meta" hidden></p>
 
-      <section id="recommended-actions" class="recommended-actions" hidden>
-        <p class="section-label">Recommended Actions</p>
-        <ol id="actions-list" class="actions-list"></ol>
-      </section>
-
-      <section id="position-cards" class="position-cards" aria-live="polite"></section>
+      <section id="position-list" class="position-cards" aria-live="polite"></section>
     </main>
     <script src="/positions.js" defer></script>
   </body>
